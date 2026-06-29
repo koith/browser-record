@@ -20,6 +20,34 @@
   .header .folder-btn { border:none; background:var(--chip); color:var(--accent); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
   .header .title { font-size:20px; font-weight:700; letter-spacing:-0.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .header .count { font-size:13px; color:var(--sub); white-space:nowrap; }
+  .header .h-right { display:flex; align-items:center; gap:10px; }
+  .settings-btn { border:none; background:var(--chip); font-size:18px; padding:6px 10px; border-radius:10px; line-height:1; }
+
+  /* Settings panel */
+  .settings { position:absolute; inset:0; background:var(--bg); display:none; flex-direction:column; z-index:55; }
+  .settings.open { display:flex; }
+  .settings .set-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 16px 10px; border-bottom:.5px solid var(--border); background:var(--panel); }
+  .settings .set-top .set-title { font-size:18px; font-weight:700; }
+  .settings .set-top button { border:none; background:none; color:var(--accent); font-size:16px; font-weight:600; padding:6px 8px; }
+  .settings .set-body { flex:1; overflow-y:auto; padding:16px; }
+  .set-group { background:var(--panel); border:.5px solid var(--border); border-radius:14px; overflow:hidden; margin-bottom:18px; }
+  .set-group .set-glabel { font-size:12px; font-weight:600; color:var(--sub); letter-spacing:.03em; text-transform:uppercase; padding:14px 16px 8px; }
+  .set-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 16px; border-top:.5px solid var(--border); }
+  .set-row:first-of-type { border-top:none; }
+  .set-row .sr-label { font-size:16px; }
+  .set-row .sr-sub { font-size:12px; color:var(--sub); margin-top:2px; }
+  .set-row .sr-act { border:none; background:var(--chip); color:var(--accent); font-size:14px; font-weight:600; padding:9px 14px; border-radius:10px; white-space:nowrap; }
+  .set-row .sr-act.danger { color:var(--red); }
+  /* iOS-style switch */
+  .switch { position:relative; width:51px; height:31px; flex:0 0 auto; }
+  .switch input { opacity:0; width:0; height:0; }
+  .switch .track { position:absolute; inset:0; background:var(--chip2); border-radius:31px; transition:.2s; }
+  .switch input:checked + .track { background:var(--green); }
+  .switch .knob { position:absolute; top:2px; left:2px; width:27px; height:27px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .switch input:checked + .track .knob { transform:translateX(20px); }
+  .set-input { width:100%; border:.5px solid var(--border); background:var(--bg); color:var(--text); border-radius:10px; padding:10px 12px; font-size:14px; margin-top:8px; outline:none; }
+  .cloud-fields { padding:0 16px 16px; }
+  .cloud-fields.hidden { display:none; }
 
   .main { flex:1; position:relative; overflow:hidden; }
 
@@ -120,7 +148,12 @@
   .viewer.open { display:flex; }
   .viewer .vw-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 16px 10px; }
   .viewer .vw-top button { background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:980px; padding:9px 18px; font-size:15px; }
-  .viewer .vw-stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden; }
+  .viewer .vw-stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden; position:relative; }
+  .viewer .vw-media { flex:1; display:flex; align-items:center; justify-content:center; max-width:100%; max-height:100%; }
+  .viewer .vw-nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:64px; border:none; background:rgba(255,255,255,.12); color:#fff; font-size:30px; border-radius:12px; z-index:2; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
+  .viewer .vw-nav.prev { left:8px; }
+  .viewer .vw-nav.next { right:8px; }
+  .viewer .vw-nav:disabled { opacity:.25; }
   .viewer .vw-stage img, .viewer .vw-stage video { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
   .viewer .vw-stage audio { width:90%; }
   .viewer .vw-bottom { flex:0 0 auto; display:flex; justify-content:center; gap:12px; padding:12px 16px calc(16px + env(safe-area-inset-bottom)); }
@@ -159,7 +192,10 @@
       <button class="folder-btn" id="folderBtn">📁 폴더</button>
       <div class="title" id="title">메모</div>
     </div>
-    <div class="count" id="count"></div>
+    <div class="h-right">
+      <div class="count" id="count"></div>
+      <button class="settings-btn" id="settingsBtn" style="display:none;" aria-label="설정">⚙️</button>
+    </div>
   </div>
 
   <div class="subbar" id="subbar">
@@ -215,9 +251,55 @@
 
     <!-- VIEWER -->
     <div class="viewer" id="viewer">
-      <div class="vw-top"><button id="vwClose">← 닫기</button><button id="vwDelete" style="background:rgba(255,59,48,.25);">삭제</button></div>
-      <div class="vw-stage" id="vwStage"></div>
+      <div class="vw-top"><button id="vwClose">← 닫기</button><span id="vwCounter" style="color:#fff;font-size:14px;"></span><button id="vwDelete" style="background:rgba(255,59,48,.25);">삭제</button></div>
+      <div class="vw-stage" id="vwStage">
+        <button class="vw-nav prev" id="vwPrev" aria-label="이전">‹</button>
+        <div class="vw-media" id="vwMedia"></div>
+        <button class="vw-nav next" id="vwNext" aria-label="다음">›</button>
+      </div>
       <div class="vw-bottom"><button id="vwSave">저장 / 공유</button></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="settings" id="settings">
+      <div class="set-top">
+        <div class="set-title">설정</div>
+        <button id="setClose">완료</button>
+      </div>
+      <div class="set-body">
+        <div class="set-group">
+          <div class="set-glabel">화면</div>
+          <div class="set-row">
+            <div><div class="sr-label">다크 모드</div></div>
+            <label class="switch"><input type="checkbox" id="setDark"><span class="track"><span class="knob"></span></span></label>
+          </div>
+        </div>
+        <div class="set-group">
+          <div class="set-glabel">백업</div>
+          <div class="set-row">
+            <div><div class="sr-label">JSON 백업</div><div class="sr-sub">모든 메모·폴더·첨부를 파일로 내보냅니다</div></div>
+            <button class="sr-act" id="setExport">내보내기</button>
+          </div>
+          <div class="set-row">
+            <div><div class="sr-label">JSON 복원</div><div class="sr-sub">백업 파일에서 불러옵니다 (현재 데이터에 병합)</div></div>
+            <button class="sr-act" id="setImport">불러오기</button>
+          </div>
+          <input type="file" id="importFile" accept="application/json" style="display:none;">
+        </div>
+        <div class="set-group">
+          <div class="set-glabel">클라우드 동기화 (Supabase)</div>
+          <div class="set-row">
+            <div><div class="sr-label">클라우드 동기화 사용</div><div class="sr-sub">Supabase에 메모를 백업·동기화</div></div>
+            <label class="switch"><input type="checkbox" id="setCloud"><span class="track"><span class="knob"></span></span></label>
+          </div>
+          <div class="cloud-fields hidden" id="cloudFields">
+            <input class="set-input" id="cloudUrl" placeholder="Supabase Project URL (https://xxx.supabase.co)">
+            <input class="set-input" id="cloudKey" placeholder="anon public key">
+            <button class="sr-act" id="cloudSave" style="margin-top:10px;">연결 정보 저장</button>
+            <div class="sr-sub" style="margin-top:8px;">※ Supabase 프로젝트를 먼저 만들어야 합니다. 연결 후 실제 동기화 동작은 다음 업데이트에서 활성화됩니다.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- SHEET -->
@@ -337,6 +419,7 @@ function showNotes(){
   folderListEl.style.display='none'; listEl.style.display='block';
   $('subbar').classList.remove('hidden'); $('sortBtn').style.display='block';
   $('searchInput').placeholder='메모 검색';
+  $('settingsBtn').style.display='none';
   $('title').textContent=currentFolder().name;
   $('btnNew').style.display='flex'; $('btnNewFolder').style.display='none';
   localStorage.setItem(LAST_KEY,currentFolderId);
@@ -390,6 +473,7 @@ function showFolders(){
   listEl.style.display='none'; folderListEl.style.display='block'; editor.classList.remove('open');
   $('subbar').classList.remove('hidden'); $('sortBtn').style.display='none';
   $('searchInput').placeholder='모든 폴더 검색';
+  $('settingsBtn').style.display='block';
   $('title').textContent='폴더';
   $('count').textContent=folders.length+'개';
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='flex'; $('btnSave').style.display='none';
@@ -565,6 +649,14 @@ $('btnNewFolder').addEventListener('click',newFolder);
 /* ===== SHEET (move picker) ===== */
 const sheetBg=$('sheetBg'), sheetHost=$('sheetHost');
 function closeSheet(){ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }
+function showConfirm(msg, onYes, yesLabel){
+  const html='<div class="sheet"><div class="sh-title">'+msg+'</div>'+
+    '<div class="sh-item" id="cfYes" style="color:var(--red);font-weight:600;">'+(yesLabel||'삭제')+'</div>'+
+    '</div><div class="sh-cancel" id="cfNo">취소</div>';
+  sheetHost.innerHTML=html; sheetBg.classList.add('open');
+  $('cfYes').addEventListener('click',()=>{ closeSheet(); onYes&&onYes(); });
+  $('cfNo').addEventListener('click',closeSheet);
+}
 sheetBg.addEventListener('click',e=>{ if(e.target===sheetBg)closeSheet(); });
 function openMoveSheet(note){
   const others=folders.filter(f=>f.id!==note.folderId);
@@ -616,9 +708,9 @@ function renderEditorMedia(){
   });
   wrap.querySelectorAll('.rm').forEach(b=>{
     let touched=false;
-    const doDelete=()=>{ current.media.splice(+b.dataset.i,1); put(NOTES,current); renderEditorMedia(); };
-    b.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); touched=true; doDelete(); },{passive:false});
-    b.addEventListener('click',e=>{ e.stopPropagation(); if(touched){touched=false;return;} doDelete(); });
+    const askDelete=()=>{ const idx=+b.dataset.i; showConfirm('이 첨부를 삭제할까요?', ()=>{ current.media.splice(idx,1); put(NOTES,current); renderEditorMedia(); }); };
+    b.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); touched=true; askDelete(); },{passive:false});
+    b.addEventListener('click',e=>{ e.stopPropagation(); if(touched){touched=false;return;} askDelete(); });
   });
   updateAttachVisibility();
 }
@@ -715,15 +807,49 @@ function fireLocAlert(n){
 function maybeAskNotify(){ if('Notification' in window && Notification.permission==='default'){ Notification.requestPermission(); } }
 
 /* ===== VIEWER ===== */
-let viewerIndex=-1; const viewer=$('viewer'), vwStage=$('vwStage');
-function openViewer(i){
-  if(!current||!current.media||!current.media[i])return; viewerIndex=i; const m=current.media[i]; const url=mediaURL(m);
-  vwStage.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline autoplay></video>':m.kind==='audio'?'<audio src="'+url+'" controls autoplay></audio>':'<img src="'+url+'">';
-  viewer.classList.add('open');
+let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
+function renderViewer(){
+  if(!current||!current.media||!current.media[viewerIndex])return;
+  const m=current.media[viewerIndex]; const url=mediaURL(m);
+  vwMedia.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline autoplay></video>':m.kind==='audio'?'<audio src="'+url+'" controls autoplay></audio>':'<img src="'+url+'">';
+  const total=current.media.length;
+  $('vwCounter').textContent=(viewerIndex+1)+' / '+total;
+  $('vwPrev').disabled=viewerIndex<=0;
+  $('vwNext').disabled=viewerIndex>=total-1;
 }
-function closeViewer(){ viewer.classList.remove('open'); vwStage.innerHTML=''; viewerIndex=-1; }
+function openViewer(i){
+  if(!current||!current.media||!current.media[i])return;
+  viewerIndex=i; renderViewer(); viewer.classList.add('open');
+}
+function closeViewer(){ viewer.classList.remove('open'); vwMedia.innerHTML=''; viewerIndex=-1; }
+function viewerStep(d){
+  if(!current||!current.media)return;
+  const ni=viewerIndex+d;
+  if(ni<0||ni>=current.media.length)return;
+  viewerIndex=ni; renderViewer();
+}
 $('vwClose').addEventListener('click',closeViewer);
-$('vwDelete').addEventListener('click',()=>{ if(viewerIndex>=0&&current&&current.media){current.media.splice(viewerIndex,1);put(NOTES,current);renderEditorMedia();} closeViewer(); });
+/* nav buttons use touchend+click guard to avoid double-tap zoom on fast taps */
+function bindNav(el,fn){ let t=false; el.addEventListener('touchend',e=>{e.preventDefault();t=true;fn();setTimeout(()=>t=false,350);},{passive:false}); el.addEventListener('click',()=>{if(t)return;fn();}); }
+bindNav($('vwPrev'),()=>viewerStep(-1));
+bindNav($('vwNext'),()=>viewerStep(1));
+/* swipe left/right on the media area */
+(function(){
+  let sx=0,sy=0,act=false;
+  vwMedia.addEventListener('touchstart',e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; act=true; },{passive:true});
+  vwMedia.addEventListener('touchend',e=>{
+    if(!act)return; act=false; const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ viewerStep(dx<0?1:-1); }
+  },{passive:true});
+})();
+$('vwDelete').addEventListener('click',()=>{
+  if(viewerIndex<0||!current||!current.media)return;
+  showConfirm('이 첨부를 삭제할까요?', ()=>{
+    current.media.splice(viewerIndex,1); put(NOTES,current); renderEditorMedia();
+    if(!current.media.length){ closeViewer(); }
+    else { if(viewerIndex>=current.media.length)viewerIndex=current.media.length-1; renderViewer(); }
+  });
+});
 $('vwSave').addEventListener('click',async()=>{
   if(viewerIndex<0||!current)return; const m=current.media[viewerIndex];
   const ext=m.kind==='video'?(m.blob.type.includes('mp4')?'mp4':'webm'):m.kind==='audio'?(m.blob.type.includes('mp4')?'m4a':'webm'):'jpg';
@@ -749,7 +875,8 @@ async function openCamera(){
 }
 function closeCamera(){
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
-  if(stream)stream.getTracks().forEach(t=>t.stop());
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+  try{ video.srcObject=null; }catch(e){}
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
 }
 $('camClose').addEventListener('click',closeCamera);
@@ -850,6 +977,84 @@ applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
   document.body.classList.toggle('shrink',small);
   $('btnShrink').classList.toggle('on',small);
 })();
+/* ===== Settings panel ===== */
+const settingsEl=$('settings');
+function openSettings(){
+  $('setDark').checked=document.body.classList.contains('dark');
+  const cloudOn=localStorage.getItem('cloudEnabled')==='1';
+  $('setCloud').checked=cloudOn; $('cloudFields').classList.toggle('hidden',!cloudOn);
+  $('cloudUrl').value=localStorage.getItem('cloudUrl')||'';
+  $('cloudKey').value=localStorage.getItem('cloudKey')||'';
+  settingsEl.classList.add('open');
+}
+function closeSettings(){ settingsEl.classList.remove('open'); }
+$('settingsBtn').addEventListener('click',openSettings);
+$('setClose').addEventListener('click',closeSettings);
+$('setDark').addEventListener('change',e=>applyDark(e.target.checked));
+$('setCloud').addEventListener('change',e=>{
+  const on=e.target.checked; localStorage.setItem('cloudEnabled',on?'1':'0');
+  $('cloudFields').classList.toggle('hidden',!on);
+});
+$('cloudSave').addEventListener('click',()=>{
+  localStorage.setItem('cloudUrl',$('cloudUrl').value.trim());
+  localStorage.setItem('cloudKey',$('cloudKey').value.trim());
+  showToast('연결 정보를 저장했습니다');
+});
+
+/* ----- JSON backup / restore ----- */
+function blobToDataURL(b){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); }); }
+function dataURLToBlob(d){ const [h,b64]=d.split(','); const mime=(h.match(/:(.*?);/)||[])[1]||'application/octet-stream'; const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return new Blob([u],{type:mime}); }
+async function exportJSON(){
+  showToast('백업 파일 생성 중…');
+  const fs=await getAll(FOLDERS), ns=await getAll(NOTES);
+  const out={ version:1, exportedAt:Date.now(), folders:fs, notes:[] };
+  for(const n of ns){
+    const media=[];
+    for(const m of (n.media||[])){
+      const item={kind:m.kind};
+      if(m.blob)item.blob=await blobToDataURL(m.blob);
+      if(m.poster)item.poster=await blobToDataURL(m.poster);
+      media.push(item);
+    }
+    out.notes.push({...n, media, _url:undefined, _purl:undefined});
+  }
+  const json=JSON.stringify(out);
+  const blob=new Blob([json],{type:'application/json'});
+  const filename='memo-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  const file=new File([blob],filename,{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file]}); showToast('백업을 내보냈습니다'); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+  showToast('백업을 내보냈습니다');
+}
+$('setExport').addEventListener('click',exportJSON);
+$('setImport').addEventListener('click',()=>$('importFile').click());
+$('importFile').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  try{
+    const text=await file.text(); const data=JSON.parse(text);
+    if(!data||!Array.isArray(data.notes)){ showToast('잘못된 백업 파일입니다'); return; }
+    showConfirm('백업을 현재 데이터에 병합할까요?', async()=>{
+      showToast('복원 중…');
+      for(const f of (data.folders||[])){ if(!folders.some(x=>x.id===f.id)){ await put(FOLDERS,f); } }
+      for(const n of data.notes){
+        const media=[];
+        for(const m of (n.media||[])){
+          const item={kind:m.kind};
+          if(m.blob)item.blob=dataURLToBlob(m.blob);
+          if(m.poster)item.poster=dataURLToBlob(m.poster);
+          media.push(item);
+        }
+        const note={...n, media};
+        if(!note.folderId||!(data.folders||folders).some(f=>f.id===note.folderId)) note.folderId=folders[0].id;
+        await put(NOTES,note);
+      }
+      folders=await getAll(FOLDERS); sortFolders(); notes=await getAll(NOTES);
+      closeSettings(); showFolders(); showToast('복원 완료');
+    },'병합');
+  }catch(err){ showToast('복원 실패: '+err.message); }
+  e.target.value='';
+});
+
 init();
 </script>
 </body>
