@@ -5,35 +5,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>기록 메모</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  :root {
-    --bg:#fbfbfd; --panel:#fff; --border:#e3e3e8; --text:#1d1d1f; --sub:#8a8a8e;
-    --blue:#0a84ff; --red:#ff3b30; --paper:#fffdf7;
-  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root { --bg:#fbfbfd; --panel:#fff; --border:#e3e3e8; --text:#1d1d1f; --sub:#8a8a8e; --blue:#0a84ff; --red:#ff3b30; --green:#34c759; --paper:#fffdf7; }
   html,body { height:100%; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
   body { display:flex; flex-direction:column; }
 
-  .header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:calc(8px + env(safe-area-inset-top)) 16px 8px; border-bottom:.5px solid var(--border); background:var(--panel); }
-  .header .title { font-size:18px; font-weight:700; }
-  .header .count { font-size:13px; color:var(--sub); }
+  .header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:calc(8px + env(safe-area-inset-top)) 14px 8px; border-bottom:.5px solid var(--border); background:var(--panel); }
+  .header .h-left { display:flex; align-items:center; gap:8px; min-width:0; }
+  .header .folder-btn { border:none; background:#f0f0f3; color:var(--blue); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
+  .header .title { font-size:18px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .header .count { font-size:13px; color:var(--sub); white-space:nowrap; }
 
   .main { flex:1; position:relative; overflow:hidden; }
 
+  /* generic swipe row */
+  .swipe-wrap { position:relative; overflow:hidden; border-radius:14px; margin-bottom:10px; }
+  .swipe-actions { position:absolute; top:0; right:0; height:100%; display:flex; align-items:stretch; }
+  .swipe-actions button { border:none; color:#fff; font-size:14px; font-weight:600; width:72px; display:flex; align-items:center; justify-content:center; }
+  .swipe-actions .move { background:var(--blue); }
+  .swipe-actions .del { background:var(--red); }
+  .swipe-actions .edit { background:#8e8e93; }
+  .swipe-content { position:relative; background:var(--panel); transition:transform .22s cubic-bezier(.25,.8,.3,1); will-change:transform; touch-action:pan-y; }
+
   .list { height:100%; overflow-y:auto; padding:8px 12px 12px; }
   .empty { text-align:center; color:var(--sub); margin-top:64px; font-size:15px; line-height:1.6; }
-  .note-card { background:var(--panel); border:.5px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
+  .note-card { background:var(--panel); border:.5px solid var(--border); border-radius:14px; padding:14px 16px; }
   .note-card .nc-title { font-size:16px; font-weight:600; margin-bottom:4px; }
   .note-card .nc-preview { font-size:14px; color:var(--sub); line-height:1.45; max-height:42px; overflow:hidden; }
   .note-card .nc-meta { font-size:12px; color:var(--sub); margin-top:8px; display:flex; gap:10px; align-items:center; }
   .note-card .nc-media { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
-  .note-card .nc-media .m { width:54px; height:54px; border-radius:8px; overflow:hidden; border:.5px solid var(--border); background:#eee; display:flex; align-items:center; justify-content:center; }
-  .note-card .nc-media .m img, .note-card .nc-media .m video { width:100%; height:100%; object-fit:cover; }
-  .note-card .nc-media .m.audio { background:#eef; font-size:22px; }
+  .m { position:relative; width:54px; height:54px; border-radius:8px; overflow:hidden; border:.5px solid var(--border); background:#eee; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .m img, .m video { width:100%; height:100%; object-fit:cover; }
+  .m.audio { background:#eef; font-size:22px; }
   .m .play-badge { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; font-size:14px; text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
-  .note-card .nc-media .m { position:relative; }
-  /* shrink toggle: 1/20 size thumbnails */
-  body.shrink .note-card .nc-media .m { width:16px; height:16px; border-radius:3px; }
-  body.shrink .note-card .nc-media .m.audio { font-size:9px; }
+  body.shrink .m { width:16px; height:16px; border-radius:3px; font-size:9px; }
+  body.shrink .m .play-badge { font-size:8px; }
+
+  /* folder list */
+  .folder-row { background:var(--panel); border:.5px solid var(--border); border-radius:14px; padding:16px; display:flex; align-items:center; justify-content:space-between; }
+  .folder-row .f-left { display:flex; align-items:center; gap:12px; }
+  .folder-row .f-icon { font-size:22px; }
+  .folder-row .f-name { font-size:17px; font-weight:600; }
+  .folder-row .f-count { font-size:14px; color:var(--sub); }
+  .folder-row .f-rename { border:none; background:none; color:var(--blue); font-size:14px; padding:4px 6px; }
 
   .editor { position:absolute; inset:0; background:var(--paper); display:none; flex-direction:column; }
   .editor.open { display:flex; }
@@ -43,31 +57,24 @@
   .editor .ed-body { flex:1; overflow-y:auto; padding:14px 16px; }
   .editor input.ed-title { width:100%; border:none; background:transparent; outline:none; font-size:22px; font-weight:700; margin-bottom:8px; }
   .editor textarea.ed-text { width:100%; min-height:140px; border:none; background:transparent; outline:none; font-size:16px; line-height:1.55; resize:none; font-family:inherit; }
-  .ed-media { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px; }
-  .ed-media .m { position:relative; aspect-ratio:1; border-radius:10px; overflow:hidden; border:.5px solid var(--border); background:#000; display:flex; align-items:center; justify-content:center; }
-  .ed-media .m img, .ed-media .m video { width:100%; height:100%; object-fit:cover; }
-  .ed-media .m.audio { background:#1c1c1e; color:#fff; font-size:30px; }
-  .ed-media .m .rm { position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:15px; line-height:24px; z-index:2; }
-  body.shrink .ed-media { grid-template-columns:repeat(6,1fr); gap:4px; }
-  body.shrink .ed-media .m { border-radius:4px; }
-  body.shrink .ed-media .m.audio { font-size:14px; }
-  body.shrink .ed-media .m .rm { width:16px; height:16px; font-size:11px; line-height:16px; top:1px; right:1px; }
+  /* editor media uses SAME 54px size as list */
+  .ed-media { display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }
+  .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; }
+  body.shrink .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
 
-  /* Camera floating window (1/3 of previous, 20% opacity, draggable) */
+  /* Camera floating window 1/3 + 20% opacity + draggable */
   .cam { position:absolute; right:12px; bottom:calc(150px + env(safe-area-inset-bottom)); width:44px; height:59px; background:#000; display:none; flex-direction:column; z-index:30; border-radius:10px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.35); border:1.5px solid rgba(255,255,255,.85); opacity:.2; touch-action:none; }
   .cam.open { display:flex; }
   .cam video { flex:1; width:100%; height:100%; object-fit:cover; }
   .cam .cam-top { position:absolute; top:2px; left:2px; right:2px; display:flex; justify-content:space-between; z-index:2; }
-  .cam .cam-top button { background:rgba(0,0,0,.55); color:#fff; border:none; border-radius:980px; padding:2px 5px; font-size:9px; backdrop-filter:blur(8px); }
-  .cam .rec-badge { position:absolute; top:2px; left:50%; transform:translateX(-50%); display:none; align-items:center; gap:3px; background:rgba(0,0,0,.6); color:#fff; padding:1px 4px; border-radius:980px; font-size:8px; font-variant-numeric:tabular-nums; z-index:3; }
+  .cam .cam-top button { background:rgba(0,0,0,.55); color:#fff; border:none; border-radius:980px; padding:2px 5px; font-size:9px; }
+  .cam .rec-badge { position:absolute; top:2px; left:50%; transform:translateX(-50%); display:none; align-items:center; gap:3px; background:rgba(0,0,0,.6); color:#fff; padding:1px 4px; border-radius:980px; font-size:8px; z-index:3; }
   .cam .rec-badge.active { display:flex; }
   .cam .rec-dot { width:5px; height:5px; border-radius:50%; background:var(--red); animation:blink 1s steps(2,start) infinite; }
   @keyframes blink { 50% { opacity:.2; } }
-  /* shrink toggle further reduces */
   body.shrink .cam { width:20px; height:27px; }
   body.shrink .cam .cam-top, body.shrink .cam .rec-badge { display:none !important; }
 
-  /* Capture controls OUTSIDE the camera window */
   .cap-dock { position:absolute; right:12px; bottom:calc(72px + env(safe-area-inset-bottom)); display:none; flex-direction:row; gap:10px; z-index:31; align-items:center; }
   .cap-dock.open { display:flex; }
   .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; }
@@ -75,19 +82,16 @@
   .cap-dock .big .ic-square { width:22px; height:22px; border-radius:6px; background:var(--text); }
   .cap-dock .big .ic-circle { width:22px; height:22px; border-radius:50%; border:4px solid var(--red); box-sizing:border-box; }
   .cap-dock .big.recording .ic-circle { border-radius:5px; background:var(--red); width:18px; height:18px; border-width:0; }
-  .cap-dock .big .ic-mic { font-size:22px; }
 
-  /* Viewer */
   .viewer { position:absolute; inset:0; background:rgba(0,0,0,.94); display:none; flex-direction:column; z-index:50; }
   .viewer.open { display:flex; }
   .viewer .vw-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 16px 10px; }
-  .viewer .vw-top button { background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:980px; padding:9px 18px; font-size:15px; font-weight:500; }
+  .viewer .vw-top button { background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:980px; padding:9px 18px; font-size:15px; }
   .viewer .vw-stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden; }
   .viewer .vw-stage img, .viewer .vw-stage video { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
   .viewer .vw-stage audio { width:90%; }
   .viewer .vw-bottom { flex:0 0 auto; display:flex; justify-content:center; gap:12px; padding:12px 16px calc(16px + env(safe-area-inset-bottom)); }
-  .viewer .vw-bottom button { background:var(--blue); color:#fff; border:none; border-radius:12px; padding:13px 26px; font-size:16px; font-weight:600; display:flex; align-items:center; gap:7px; }
-  .viewer .vw-bottom button svg { width:20px; height:20px; }
+  .viewer .vw-bottom button { background:var(--blue); color:#fff; border:none; border-radius:12px; padding:13px 26px; font-size:16px; font-weight:600; }
 
   .toolbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:.5px solid var(--border); background:var(--panel); }
   .tb-btn { flex:0 0 auto; height:44px; min-width:44px; padding:0 14px; border-radius:12px; border:none; background:#f0f0f3; color:var(--text); font-size:15px; font-weight:500; display:flex; align-items:center; gap:6px; }
@@ -99,24 +103,42 @@
   .cap-btn { flex:0 0 auto; width:44px; height:44px; border-radius:12px; border:none; display:flex; align-items:center; justify-content:center; background:#f0f0f3; }
   .cap-btn:active { background:#e3e3e8; }
   .cap-btn .ic-square { width:18px; height:18px; border-radius:5px; background:var(--text); }
-  .cap-btn .ic-circle { width:18px; height:18px; border-radius:50%; border:3px solid var(--red); box-sizing:border-box; }
   .cap-btn .ic-mic { font-size:20px; }
 
-  .toast { position:absolute; bottom:84px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.8); color:#fff; padding:10px 18px; border-radius:980px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:60; }
+  /* sheet (folder picker / actions) */
+  .sheet-bg { position:absolute; inset:0; background:rgba(0,0,0,.35); display:none; z-index:70; }
+  .sheet-bg.open { display:block; }
+  .sheet { position:absolute; left:8px; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); background:var(--panel); border-radius:16px; overflow:hidden; }
+  .sheet .sh-title { padding:14px 16px; font-size:13px; color:var(--sub); text-align:center; border-bottom:.5px solid var(--border); }
+  .sheet .sh-item { padding:16px; font-size:17px; text-align:center; border-bottom:.5px solid var(--border); color:var(--blue); display:flex; align-items:center; justify-content:center; gap:8px; }
+  .sheet .sh-item:active { background:#f0f0f3; }
+  .sheet .sh-cancel { margin-top:8px; background:var(--panel); border-radius:16px; padding:16px; text-align:center; font-size:17px; font-weight:600; color:var(--blue); }
+
+  .toast { position:absolute; bottom:84px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.8); color:#fff; padding:10px 18px; border-radius:980px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:80; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
   <div class="header">
-    <div class="title">기록 메모</div>
+    <div class="h-left">
+      <button class="folder-btn" id="folderBtn">📁 폴더</button>
+      <div class="title" id="title">메모</div>
+    </div>
     <div class="count" id="count"></div>
   </div>
 
   <div class="main">
+    <!-- NOTE LIST -->
     <div class="list" id="list">
-      <div class="empty" id="empty">저장된 메모가 없습니다.<br>아래 ‘새 메모’로 시작하세요.</div>
+      <div class="empty" id="empty">이 폴더에 메모가 없습니다.<br>아래 ‘새 메모’로 시작하세요.</div>
     </div>
 
+    <!-- FOLDER LIST -->
+    <div class="list" id="folderList" style="display:none;">
+      <div class="empty" id="folderEmpty" style="display:none;">폴더가 없습니다.</div>
+    </div>
+
+    <!-- EDITOR -->
     <div class="editor" id="editor">
       <div class="ed-top">
         <button id="edBack">← 목록</button>
@@ -129,120 +151,242 @@
       </div>
     </div>
 
-    <!-- Camera floating preview (no buttons inside) -->
+    <!-- CAMERA -->
     <div class="cam" id="cam">
-      <div class="cam-top">
-        <button id="camFlip">⟲</button>
-        <button id="camClose">✕</button>
-      </div>
+      <div class="cam-top"><button id="camFlip">⟲</button><button id="camClose">✕</button></div>
       <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
       <video id="preview" playsinline autoplay muted></video>
     </div>
-
-    <!-- Capture buttons OUTSIDE the camera window -->
     <div class="cap-dock" id="capDock">
-      <button class="big" id="bigPhoto" aria-label="사진"><span class="ic-square"></span></button>
-      <button class="big" id="bigRec" aria-label="녹화"><span class="ic-circle"></span></button>
+      <button class="big" id="bigPhoto"><span class="ic-square"></span></button>
+      <button class="big" id="bigRec"><span class="ic-circle"></span></button>
     </div>
 
+    <!-- VIEWER -->
     <div class="viewer" id="viewer">
-      <div class="vw-top">
-        <button id="vwClose">← 닫기</button>
-        <button id="vwDelete" style="background:rgba(255,59,48,.25);">삭제</button>
-      </div>
+      <div class="vw-top"><button id="vwClose">← 닫기</button><button id="vwDelete" style="background:rgba(255,59,48,.25);">삭제</button></div>
       <div class="vw-stage" id="vwStage"></div>
-      <div class="vw-bottom">
-        <button id="vwSave">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 17v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          저장 / 공유
-        </button>
-      </div>
+      <div class="vw-bottom"><button id="vwSave">저장 / 공유</button></div>
+    </div>
+
+    <!-- SHEET -->
+    <div class="sheet-bg" id="sheetBg">
+      <div class="sheet-host" id="sheetHost"></div>
     </div>
 
     <div class="toast" id="toast"></div>
   </div>
 
   <div class="toolbar" id="toolbar">
-    <button class="tb-btn primary" id="btnNew">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>새 메모
-    </button>
-    <button class="tb-btn" id="btnSave" style="display:none;">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>저장
-    </button>
+    <button class="tb-btn primary" id="btnNew"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>새 메모</button>
+    <button class="tb-btn" id="btnNewFolder" style="display:none;">+ 새 폴더</button>
+    <button class="tb-btn" id="btnSave" style="display:none;"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>저장</button>
     <div class="tb-spacer"></div>
-    <button class="tb-btn" id="btnShrink" aria-label="축소 토글" title="1/20 축소">⊟</button>
-    <button class="cap-btn" id="capPhoto" aria-label="촬영"><span class="ic-square"></span></button>
-    <button class="cap-btn" id="capAudio" aria-label="음성"><span class="ic-mic">🎙️</span></button>
+    <button class="tb-btn" id="btnShrink">⊟</button>
+    <button class="cap-btn" id="capPhoto"><span class="ic-square"></span></button>
+    <button class="cap-btn" id="capAudio"><span class="ic-mic">🎙️</span></button>
   </div>
 
 <script>
-/* ===== IndexedDB ===== */
-const DB_NAME='memoDB', STORE='notes'; let db;
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:'id'});};r.onsuccess=e=>{db=e.target.result;res(db);};r.onerror=e=>rej(e.target.error);});}
-function tx(m){return db.transaction(STORE,m).objectStore(STORE);}
-function putNote(n){return new Promise((res,rej)=>{const r=tx('readwrite').put(n);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
-function deleteNote(id){return new Promise((res,rej)=>{const r=tx('readwrite').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
-function allNotes(){return new Promise((res,rej)=>{const r=tx('readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
+/* ===== IndexedDB (v2: notes + folders) ===== */
+const DB_NAME='memoDB', NOTES='notes', FOLDERS='folders'; let db;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,2);
+  r.onupgradeneeded=e=>{const d=e.target.result;
+    if(!d.objectStoreNames.contains(NOTES))d.createObjectStore(NOTES,{keyPath:'id'});
+    if(!d.objectStoreNames.contains(FOLDERS))d.createObjectStore(FOLDERS,{keyPath:'id'});
+  };
+  r.onsuccess=e=>{db=e.target.result;res(db);}; r.onerror=e=>rej(e.target.error);});}
+function st(store,m){return db.transaction(store,m).objectStore(store);}
+function put(store,v){return new Promise((res,rej)=>{const r=st(store,'readwrite').put(v);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
+function del(store,id){return new Promise((res,rej)=>{const r=st(store,'readwrite').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
+function getAll(store){return new Promise((res,rej)=>{const r=st(store,'readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
 
-/* ===== blob URL cache (fixes broken X-box thumbnails) ===== */
-const urlCache = new WeakMap();
-function blobURL(blob){
-  if(!blob) return '';
-  if(urlCache.has(blob)) return urlCache.get(blob);
-  const u=URL.createObjectURL(blob); urlCache.set(blob,u); return u;
-}
+/* ===== blob URL cache ===== */
+const urlCache=new WeakMap();
+function blobURL(b){ if(!b)return''; if(urlCache.has(b))return urlCache.get(b); const u=URL.createObjectURL(b); urlCache.set(b,u); return u; }
 function mediaURL(m){ return m&&m.blob?blobURL(m.blob):''; }
 function posterURL(m){ return m&&m.poster?blobURL(m.poster):''; }
 
 const $=id=>document.getElementById(id);
-const listEl=$('list'), emptyEl=$('empty'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
+const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
 const toast=$('toast'); let toastTimer;
 function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2000);}
 
-let current=null;
+let folders=[], notes=[], currentFolderId=null, current=null, view='notes';
+const LAST_KEY='lastFolderId';
 
-/* ===== List ===== */
-function mediaCell(m, cls){
-  if (m.kind==='video') {
-    return m.poster
-      ? '<div class="m '+cls+'"><img src="'+posterURL(m)+'" loading="lazy"><span class="play-badge">▶</span></div>'
-      : '<div class="m '+cls+'"><video src="'+mediaURL(m)+'#t=0.1" muted playsinline preload="metadata"></video><span class="play-badge">▶</span></div>';
-  }
-  if (m.kind==='audio') return '<div class="m audio '+cls+'">🎙️</div>';
-  return '<div class="m '+cls+'"><img src="'+mediaURL(m)+'" loading="lazy"></div>';
-}
-async function renderList(){
-  const notes=(await allNotes()).sort((a,b)=>b.updated-a.updated);
-  $('count').textContent=notes.length?notes.length+'개':'';
-  listEl.querySelectorAll('.note-card').forEach(n=>n.remove());
-  emptyEl.style.display=notes.length?'none':'block';
-  for(const n of notes){
-    const card=document.createElement('div'); card.className='note-card';
-    const media=(n.media||[]).slice(0,6).map(m=>mediaCell(m,'')).join('');
-    card.innerHTML='<div class="nc-title">'+(n.title||'(제목 없음)')+'</div>'+
-      (n.text?'<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>':'')+
-      (media?'<div class="nc-media">'+media+'</div>':'')+
-      '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span>'+
-        ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>';
-    card.addEventListener('click',()=>openEditor(n));
-    listEl.appendChild(card);
-  }
+/* ===== bootstrap ===== */
+async function init(){
+  await openDB();
+  folders=await getAll(FOLDERS);
+  if(!folders.length){ const f={id:'f_default',name:'메모',created:Date.now()}; await put(FOLDERS,f); folders=[f]; }
+  notes=await getAll(NOTES);
+  // migrate notes without folderId into default
+  let migrated=false;
+  for(const n of notes){ if(!n.folderId){ n.folderId=folders[0].id; await put(NOTES,n); migrated=true; } }
+  if(migrated) notes=await getAll(NOTES);
+  const last=localStorage.getItem(LAST_KEY);
+  currentFolderId = (last && folders.some(f=>f.id===last)) ? last : folders[0].id;
+  showNotes();
 }
 
-/* ===== Editor ===== */
+/* ===== swipe helper (iOS-style) ===== */
+function attachSwipe(content, actionWidth){
+  let sx=0, sy=0, dx=0, dragging=false, locked=false, open=false;
+  const max=actionWidth;
+  function reset(){ content.style.transform='translateX(0)'; open=false; }
+  content._reset=reset;
+  content.addEventListener('touchstart',e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dx=0; dragging=true; locked=false; content.style.transition='none'; },{passive:true});
+  content.addEventListener('touchmove',e=>{
+    if(!dragging)return; const t=e.touches[0]; const mx=t.clientX-sx, my=t.clientY-sy;
+    if(!locked){ if(Math.abs(mx)>Math.abs(my)+4){ locked=true; } else if(Math.abs(my)>8){ dragging=false; return; } }
+    if(!locked)return;
+    let base=open?-max:0; dx=base+mx; if(dx>0)dx=0; if(dx<-max-30)dx=-max-30;
+    content.style.transform='translateX('+dx+'px)';
+    e.preventDefault();
+  },{passive:false});
+  content.addEventListener('touchend',()=>{
+    if(!dragging){return;} dragging=false; content.style.transition='transform .22s cubic-bezier(.25,.8,.3,1)';
+    if(dx < -max/2){ content.style.transform='translateX(-'+max+'px)'; open=true; } else { reset(); }
+  });
+  return { reset };
+}
+let openRows=[];
+function closeAllRows(){ openRows.forEach(r=>r._reset&&r._reset()); }
+
+/* ===== NOTE LIST ===== */
+function mediaCell(m){
+  if(m.kind==='video') return m.poster
+    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy"><span class="play-badge">▶</span></div>'
+    : '<div class="m"><video src="'+mediaURL(m)+'#t=0.1" muted playsinline preload="metadata"></video><span class="play-badge">▶</span></div>';
+  if(m.kind==='audio') return '<div class="m audio">🎙️</div>';
+  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy"></div>';
+}
+function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
+function showNotes(){
+  view='notes'; closeEditor(true);
+  folderListEl.style.display='none'; listEl.style.display='block';
+  $('title').textContent=currentFolder().name;
+  $('btnNew').style.display='flex'; $('btnNewFolder').style.display='none';
+  localStorage.setItem(LAST_KEY,currentFolderId);
+  renderNotes();
+}
+function renderNotes(){
+  const fnotes=notes.filter(n=>n.folderId===currentFolderId).sort((a,b)=>b.updated-a.updated);
+  $('count').textContent=fnotes.length?fnotes.length+'개':'';
+  listEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());
+  emptyEl.style.display=fnotes.length?'none':'block';
+  openRows=[];
+  for(const n of fnotes){
+    const wrap=document.createElement('div'); wrap.className='swipe-wrap';
+    const media=(n.media||[]).slice(0,6).map(mediaCell).join('');
+    wrap.innerHTML=
+      '<div class="swipe-actions"><button class="move">이동</button><button class="del">삭제</button></div>'+
+      '<div class="swipe-content"><div class="note-card">'+
+        '<div class="nc-title">'+(n.title||'(제목 없음)')+'</div>'+
+        (n.text?'<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>':'')+
+        (media?'<div class="nc-media">'+media+'</div>':'')+
+        '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span>'+
+          ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>'+
+      '</div></div>';
+    const content=wrap.querySelector('.swipe-content');
+    content.addEventListener('click',e=>{ if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; } openEditor(n); });
+    wrap.querySelector('.move').addEventListener('click',()=>{ closeAllRows(); openMoveSheet(n); });
+    wrap.querySelector('.del').addEventListener('click',async()=>{ await del(NOTES,n.id); notes=notes.filter(x=>x.id!==n.id); renderNotes(); });
+    attachSwipe(content,144); openRows.push(content);
+    listEl.appendChild(wrap);
+  }
+}
+
+/* ===== FOLDER LIST ===== */
+function showFolders(){
+  view='folders'; closeEditor(true); closeCamera();
+  listEl.style.display='none'; folderListEl.style.display='block'; editor.classList.remove('open');
+  $('title').textContent='폴더';
+  $('count').textContent=folders.length+'개';
+  $('btnNew').style.display='none'; $('btnNewFolder').style.display='flex'; $('btnSave').style.display='none';
+  renderFolders();
+}
+function renderFolders(){
+  folderListEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());
+  $('folderEmpty').style.display=folders.length?'none':'block';
+  openRows=[];
+  for(const f of folders){
+    const cnt=notes.filter(n=>n.folderId===f.id).length;
+    const wrap=document.createElement('div'); wrap.className='swipe-wrap';
+    wrap.innerHTML=
+      '<div class="swipe-actions"><button class="del">삭제</button></div>'+
+      '<div class="swipe-content"><div class="folder-row">'+
+        '<div class="f-left"><span class="f-icon">📁</span><div><div class="f-name">'+f.name+'</div><div class="f-count">'+cnt+'개</div></div></div>'+
+        '<button class="f-rename">이름변경</button>'+
+      '</div></div>';
+    const content=wrap.querySelector('.swipe-content');
+    content.addEventListener('click',e=>{
+      if(e.target.classList.contains('f-rename'))return;
+      if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; }
+      currentFolderId=f.id; showNotes();
+    });
+    wrap.querySelector('.f-rename').addEventListener('click',e=>{ e.stopPropagation(); renameFolder(f); });
+    wrap.querySelector('.del').addEventListener('click',()=>{ closeAllRows(); deleteFolder(f); });
+    attachSwipe(content,72); openRows.push(content);
+    folderListEl.appendChild(wrap);
+  }
+}
+async function renameFolder(f){
+  const name=prompt('폴더 이름',f.name);
+  if(name===null)return; const nm=name.trim(); if(!nm)return;
+  f.name=nm; await put(FOLDERS,f); renderFolders();
+  if(f.id===currentFolderId)$('title').textContent=nm;
+}
+async function deleteFolder(f){
+  if(folders.length<=1){ showToast('마지막 폴더는 삭제할 수 없습니다'); return; }
+  const cnt=notes.filter(n=>n.folderId===f.id).length;
+  if(!confirm('폴더 "'+f.name+'"'+(cnt?' 및 메모 '+cnt+'개':'')+'를 삭제할까요?'))return;
+  for(const n of notes.filter(x=>x.folderId===f.id)){ await del(NOTES,n.id); }
+  notes=notes.filter(n=>n.folderId!==f.id);
+  await del(FOLDERS,f.id); folders=folders.filter(x=>x.id!==f.id);
+  if(currentFolderId===f.id)currentFolderId=folders[0].id;
+  renderFolders();
+}
+async function newFolder(){
+  const name=prompt('새 폴더 이름','');
+  if(name===null)return; const nm=name.trim(); if(!nm)return;
+  const f={id:'f_'+Date.now(),name:nm,created:Date.now()};
+  await put(FOLDERS,f); folders.push(f); renderFolders();
+}
+$('folderBtn').addEventListener('click',()=>{ if(view==='folders')showNotes(); else showFolders(); });
+$('btnNewFolder').addEventListener('click',newFolder);
+
+/* ===== SHEET (move picker) ===== */
+const sheetBg=$('sheetBg'), sheetHost=$('sheetHost');
+function closeSheet(){ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }
+sheetBg.addEventListener('click',e=>{ if(e.target===sheetBg)closeSheet(); });
+function openMoveSheet(note){
+  const others=folders.filter(f=>f.id!==note.folderId);
+  let html='<div class="sheet"><div class="sh-title">"'+(note.title||'메모')+'" 이동할 폴더</div>';
+  if(!others.length) html+='<div class="sh-item" style="color:var(--sub)">다른 폴더가 없습니다</div>';
+  others.forEach(f=>{ html+='<div class="sh-item" data-id="'+f.id+'">📁 '+f.name+'</div>'; });
+  html+='</div><div class="sh-cancel" id="shCancel">취소</div>';
+  sheetHost.innerHTML=html; sheetBg.classList.add('open');
+  sheetHost.querySelectorAll('.sh-item[data-id]').forEach(el=>el.addEventListener('click',async()=>{
+    note.folderId=el.dataset.id; note.updated=Date.now(); await put(NOTES,note);
+    closeSheet(); renderNotes(); showToast('이동되었습니다');
+  }));
+  $('shCancel').addEventListener('click',closeSheet);
+}
+
+/* ===== EDITOR ===== */
 function openEditor(note){
-  current=note||{id:'n_'+Date.now(),title:'',text:'',media:[],created:Date.now(),updated:Date.now()};
+  current=note||{id:'n_'+Date.now(),title:'',text:'',media:[],folderId:currentFolderId,created:Date.now(),updated:Date.now()};
   $('edTitle').value=current.title||''; $('edText').value=current.text||'';
-  renderEditorMedia();
-  editor.classList.add('open');
-  $('btnNew').style.display='none'; $('btnSave').style.display='flex';
+  renderEditorMedia(); editor.classList.add('open');
+  $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
-function closeEditor(){
-  closeCamera();              // make sure camera/dock don't linger over the list
-  editor.classList.remove('open');
-  current=null;
-  $('btnNew').style.display='flex'; $('btnSave').style.display='none';
-  renderList();
+function closeEditor(silent){
+  closeCamera(); editor.classList.remove('open'); current=null;
+  if(view==='notes'){ $('btnNew').style.display='flex'; }
+  $('btnSave').style.display='none';
+  if(!silent && view==='notes') renderNotes();
 }
 function renderEditorMedia(){
   const wrap=$('edMedia'); wrap.innerHTML='';
@@ -256,59 +400,50 @@ function renderEditorMedia(){
     el.addEventListener('click',e=>{ if(e.target.classList.contains('rm'))return; openViewer(i); });
     wrap.appendChild(el);
   });
-  wrap.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',e=>{
-    e.stopPropagation(); current.media.splice(+b.dataset.i,1); putNote(current); renderEditorMedia();
-  }));
+  wrap.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); current.media.splice(+b.dataset.i,1); put(NOTES,current); renderEditorMedia(); }));
 }
 async function saveCurrent(){
   if(!current)return;
   current.title=$('edTitle').value.trim(); current.text=$('edText').value; current.updated=Date.now();
   if(!current.title&&!current.text&&(!current.media||!current.media.length)){ closeEditor(); return; }
-  await putNote(current); showToast('저장되었습니다'); closeEditor();
+  await put(NOTES,current);
+  if(!notes.some(n=>n.id===current.id))notes.push(current);
+  showToast('저장되었습니다'); closeEditor();
 }
 $('edBack').addEventListener('click',saveCurrent);
 $('btnSave').addEventListener('click',saveCurrent);
-$('edDelete').addEventListener('click',async()=>{ if(current&&current.id)await deleteNote(current.id); closeEditor(); });
+$('edDelete').addEventListener('click',async()=>{ if(current&&current.id){ await del(NOTES,current.id); notes=notes.filter(n=>n.id!==current.id);} closeEditor(); });
 $('btnNew').addEventListener('click',()=>openEditor(null));
 
-/* ===== Viewer ===== */
+/* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwStage=$('vwStage');
 function openViewer(i){
-  if(!current||!current.media||!current.media[i])return;
-  viewerIndex=i; const m=current.media[i]; const url=mediaURL(m);
-  vwStage.innerHTML = m.kind==='video' ? '<video src="'+url+'" controls playsinline autoplay></video>'
-    : m.kind==='audio' ? '<audio src="'+url+'" controls autoplay></audio>'
-    : '<img src="'+url+'">';
+  if(!current||!current.media||!current.media[i])return; viewerIndex=i; const m=current.media[i]; const url=mediaURL(m);
+  vwStage.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline autoplay></video>':m.kind==='audio'?'<audio src="'+url+'" controls autoplay></audio>':'<img src="'+url+'">';
   viewer.classList.add('open');
 }
 function closeViewer(){ viewer.classList.remove('open'); vwStage.innerHTML=''; viewerIndex=-1; }
 $('vwClose').addEventListener('click',closeViewer);
-$('vwDelete').addEventListener('click',()=>{ if(viewerIndex>=0&&current&&current.media){current.media.splice(viewerIndex,1);putNote(current);renderEditorMedia();} closeViewer(); });
+$('vwDelete').addEventListener('click',()=>{ if(viewerIndex>=0&&current&&current.media){current.media.splice(viewerIndex,1);put(NOTES,current);renderEditorMedia();} closeViewer(); });
 $('vwSave').addEventListener('click',async()=>{
   if(viewerIndex<0||!current)return; const m=current.media[viewerIndex];
   const ext=m.kind==='video'?(m.blob.type.includes('mp4')?'mp4':'webm'):m.kind==='audio'?(m.blob.type.includes('mp4')?'m4a':'webm'):'jpg';
   const filename=(m.kind==='video'?'video_':m.kind==='audio'?'audio_':'photo_')+Date.now()+'.'+ext;
   const file=new File([m.blob],filename,{type:m.blob.type});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file]}); showToast('저장 시트를 열었습니다'); return; }
-    catch(e){ if(e&&e.name==='AbortError'){showToast('취소됨');return;} }
-  }
+  if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file]}); showToast('저장 시트를 열었습니다'); return; }catch(e){ if(e&&e.name==='AbortError'){showToast('취소됨');return;} } }
   const url=URL.createObjectURL(m.blob); window.open(url,'_blank'); showToast('새 탭에서 길게 눌러 저장하세요'); setTimeout(()=>URL.revokeObjectURL(url),60000);
 });
 
-/* ===== Camera + capture (buttons outside window) ===== */
-let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0, recMode=null;
+/* ===== CAMERA ===== */
+let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0;
 const video=$('preview'), bigPhoto=$('bigPhoto'), bigRec=$('bigRec'), recBadge=$('recBadge'), recTime=$('recTime');
-
 async function startStream(withVideo){
   if(stream)stream.getTracks().forEach(t=>t.stop());
-  stream=await navigator.mediaDevices.getUserMedia(
-    withVideo ? {video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080}},audio:true}
-              : {audio:true});
-  if(withVideo){ video.srcObject=stream; }
+  stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080}},audio:true}:{audio:true});
+  if(withVideo)video.srcObject=stream;
 }
 async function openCamera(){
-  if(!current) openEditor(null);
+  if(!current)openEditor(null);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
   cam.classList.add('open'); capDock.classList.add('open');
   try{ await startStream(true); }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
@@ -321,64 +456,28 @@ function closeCamera(){
 $('camClose').addEventListener('click',closeCamera);
 $('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; try{await startStream(true);}catch(e){} });
 
-/* ===== Drag camera window ===== */
-(function makeDraggable(){
-  let dragging=false, sx=0, sy=0, ox=0, oy=0;
-  function onDown(e){
-    if(e.target.closest('.cam-top')) return; // let buttons work
-    const t=e.touches?e.touches[0]:e;
-    dragging=true;
-    const r=cam.getBoundingClientRect();
-    // switch to left/top positioning for free movement
-    cam.style.right='auto'; cam.style.bottom='auto';
-    cam.style.left=r.left+'px'; cam.style.top=r.top+'px';
-    ox=r.left; oy=r.top; sx=t.clientX; sy=t.clientY;
-    e.preventDefault();
-  }
-  function onMove(e){
-    if(!dragging)return;
-    const t=e.touches?e.touches[0]:e;
-    let nx=ox+(t.clientX-sx), ny=oy+(t.clientY-sy);
-    const w=cam.offsetWidth, h=cam.offsetHeight;
-    nx=Math.max(0,Math.min(window.innerWidth-w,nx));
-    ny=Math.max(0,Math.min(window.innerHeight-h,ny));
-    cam.style.left=nx+'px'; cam.style.top=ny+'px';
-    e.preventDefault();
-  }
-  function onUp(){ dragging=false; }
-  cam.addEventListener('touchstart',onDown,{passive:false});
-  cam.addEventListener('touchmove',onMove,{passive:false});
-  cam.addEventListener('touchend',onUp);
-  cam.addEventListener('mousedown',onDown);
-  window.addEventListener('mousemove',onMove);
-  window.addEventListener('mouseup',onUp);
+/* drag camera */
+(function(){ let dg=false,sx=0,sy=0,ox=0,oy=0;
+  function down(e){ if(e.target.closest('.cam-top'))return; const t=e.touches?e.touches[0]:e; dg=true; const r=cam.getBoundingClientRect(); cam.style.right='auto'; cam.style.bottom='auto'; cam.style.left=r.left+'px'; cam.style.top=r.top+'px'; ox=r.left; oy=r.top; sx=t.clientX; sy=t.clientY; e.preventDefault(); }
+  function move(e){ if(!dg)return; const t=e.touches?e.touches[0]:e; let nx=ox+(t.clientX-sx), ny=oy+(t.clientY-sy); const w=cam.offsetWidth,h=cam.offsetHeight; nx=Math.max(0,Math.min(innerWidth-w,nx)); ny=Math.max(0,Math.min(innerHeight-h,ny)); cam.style.left=nx+'px'; cam.style.top=ny+'px'; e.preventDefault(); }
+  function up(){ dg=false; }
+  cam.addEventListener('touchstart',down,{passive:false}); cam.addEventListener('touchmove',move,{passive:false}); cam.addEventListener('touchend',up);
+  cam.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
 })();
 
 async function attachMedia(blob,kind,poster){
   if(!current)openEditor(null);
   current.media=current.media||[]; const item={kind,blob}; if(poster)item.poster=poster; current.media.push(item); current.updated=Date.now();
-  await putNote(current); renderEditorMedia();
+  await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
   showToast(kind==='video'?'영상 저장됨':kind==='audio'?'음성 저장됨':'사진 저장됨');
 }
-function takePhoto(){
-  if(!stream||!video.videoWidth)return;
-  const s=stream.getVideoTracks()[0].getSettings();
-  const c=document.createElement('canvas'); c.width=s.width||video.videoWidth; c.height=s.height||video.videoHeight;
-  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
-  c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92);
-}
-function pickMime(cands){ for(const m of cands) if(MediaRecorder.isTypeSupported(m))return m; return ''; }
+function takePhoto(){ if(!stream||!video.videoWidth)return; const s=stream.getVideoTracks()[0].getSettings(); const c=document.createElement('canvas'); c.width=s.width||video.videoWidth; c.height=s.height||video.videoHeight; c.getContext('2d').drawImage(video,0,0,c.width,c.height); c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92); }
+function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
 function toggleRec(){
   if(!stream)return;
   if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
-  recMode='video'; recChunks=[];
-  // grab a poster frame from the live preview at record start
-  let poster=null;
-  if(video.videoWidth){
-    const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight;
-    pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height);
-    pc.toBlob(b=>{ poster=b; },'image/jpeg',.7);
-  }
+  recChunks=[]; let poster=null;
+  if(video.videoWidth){ const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7); }
   const mime=pickMime(['video/mp4','video/webm;codecs=h264','video/webm']);
   mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
   mediaRecorder.ondataavailable=e=>{ if(e.data.size)recChunks.push(e.data); };
@@ -387,39 +486,28 @@ function toggleRec(){
 }
 function startRecUI(){ recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active'); recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},250); }
 function stopRecUI(){ bigRec.classList.remove('recording'); recBadge.classList.remove('active'); recTime.textContent='0:00'; clearInterval(recTimer); }
-bigPhoto.addEventListener('click',takePhoto);
-bigRec.addEventListener('click',toggleRec);
-
-/* ===== Audio-only recording ===== */
-let audioRec=null, audioChunks=[], audioTimer=null;
-async function startAudio(){
-  if(!current)openEditor(null);
-  try{
-    const aStream=await navigator.mediaDevices.getUserMedia({audio:true});
-    audioChunks=[];
-    const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
-    audioRec=new MediaRecorder(aStream,mime?{mimeType:mime}:undefined);
-    audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ aStream.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio'); $('capAudio').classList.remove('on'); showToast(''); };
-    audioRec.start();
-    $('capAudio').classList.add('on');
-    showToast('🎙️ 녹음 중… 다시 탭하면 정지');
-  }catch(e){ showToast('마이크 오류: '+e.name); }
-}
-$('capAudio').addEventListener('click',()=>{
-  if(audioRec&&audioRec.state==='recording'){ audioRec.stop(); } else { startAudio(); }
-});
-
-/* toolbar capture button opens the camera window + external dock */
+bigPhoto.addEventListener('click',takePhoto); bigRec.addEventListener('click',toggleRec);
 $('capPhoto').addEventListener('click',openCamera);
 
-/* ===== Shrink toggle (1/20) ===== */
-$('btnShrink').addEventListener('click',()=>{
-  document.body.classList.toggle('shrink');
-  $('btnShrink').classList.toggle('on', document.body.classList.contains('shrink'));
-});
+/* audio */
+let audioRec=null,audioChunks=[];
+async function startAudio(){
+  if(!current)openEditor(null);
+  try{ const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
+    audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
+    audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
+    audioRec.onstop=()=>{ a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio'); $('capAudio').classList.remove('on'); };
+    audioRec.start(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
+  }catch(e){ showToast('마이크 오류: '+e.name); }
+}
+$('capAudio').addEventListener('click',()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
 
-(async()=>{ await openDB(); await renderList(); })();
+$('btnShrink').addEventListener('click',()=>{ document.body.classList.toggle('shrink'); $('btnShrink').classList.toggle('on',document.body.classList.contains('shrink')); });
+
+/* close swipe rows when tapping elsewhere */
+listEl.addEventListener('scroll',closeAllRows); folderListEl.addEventListener('scroll',closeAllRows);
+
+init();
 </script>
 </body>
 </html>
