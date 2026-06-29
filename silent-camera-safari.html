@@ -108,7 +108,7 @@
 
   .cap-dock { position:absolute; right:12px; bottom:calc(72px + env(safe-area-inset-bottom)); display:none; flex-direction:row; gap:10px; z-index:31; align-items:center; }
   .cap-dock.open { display:flex; }
-  .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; }
+  .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
   .cap-dock .big:active { transform:scale(.92); }
   /* photo = triangle */
   .cap-dock .big .ic-tri { width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-bottom:21px solid var(--text); }
@@ -455,55 +455,86 @@ function renderFolders(){
   }
 }
 
-/* ===== Folder drag-to-reorder (Apple Notes style handle) ===== */
+/* ===== Folder drag-to-reorder (Apple Notes style handle, haptic 3-stage) ===== */
 let fDrag=null;
+function vib(ms){ try{ navigator.vibrate&&navigator.vibrate(ms); }catch(e){} }
 function startFolderDrag(e,wrap,f){
   e.preventDefault(); e.stopPropagation();
   closeAllRows();
-  const rows=[...folderListEl.querySelectorAll('.swipe-wrap')];
-  const startY=(e.touches?e.touches[0]:e).clientY;
+  const pt=e.touches?e.touches[0]:e;
   const rect=wrap.getBoundingClientRect();
-  fDrag={ wrap, f, rows, startY, offset:0, h:rect.height };
+  fDrag={
+    wrap, f,
+    grabDY: pt.clientY-rect.top,   // offset of finger inside the row
+    width: rect.width, left: rect.left, height: rect.height,
+    fromIndex: folders.indexOf(f), lastIndex: folders.indexOf(f),
+    placeholder: null
+  };
+  // placeholder keeps layout space where the row was
+  const ph=document.createElement('div'); ph.className='swipe-wrap drag-placeholder'; ph.style.height=rect.height+'px'; ph.dataset.ph='1';
+  wrap.parentNode.insertBefore(ph, wrap); fDrag.placeholder=ph;
+  // lift the row out of flow, pin to finger
   wrap.classList.add('dragging');
-  document.body.style.userSelect='none';
+  wrap.style.position='fixed'; wrap.style.left=rect.left+'px'; wrap.style.width=rect.width+'px';
+  wrap.style.top=(pt.clientY-fDrag.grabDY)+'px'; wrap.style.zIndex='50'; wrap.style.margin='0';
+  vib(12); // pickup
   window.addEventListener('touchmove',onFolderDragMove,{passive:false});
   window.addEventListener('mousemove',onFolderDragMove);
   window.addEventListener('touchend',endFolderDrag);
-  window.addEventListener('mouseend',endFolderDrag);
   window.addEventListener('mouseup',endFolderDrag);
 }
 function onFolderDragMove(e){
   if(!fDrag)return; e.preventDefault();
-  const y=(e.touches?e.touches[0]:e).clientY;
-  fDrag.offset=y-fDrag.startY;
-  fDrag.wrap.style.transform='translateY('+fDrag.offset+'px)';
-  fDrag.wrap.style.position='relative'; fDrag.wrap.style.zIndex='10';
-  // determine target index based on midpoint crossing
-  const idx=folders.indexOf(fDrag.f);
-  const moved=Math.round(fDrag.offset/fDrag.h);
-  let target=Math.max(0,Math.min(folders.length-1,idx+moved));
-  if(target!==idx){
-    folders.splice(idx,1); folders.splice(target,0,fDrag.f);
-    reorderFolderDOM();
-    // keep dragged element following finger: recompute startY baseline
-    fDrag.startY=y; fDrag.offset=0; fDrag.wrap.style.transform='translateY(0)';
+  const pt=e.touches?e.touches[0]:e;
+  const top=pt.clientY-fDrag.grabDY;
+  fDrag.wrap.style.top=top+'px';   // 1:1 follow, no drift
+  const center=top+fDrag.height/2;
+  // siblings = placeholder + other rows, in DOM order
+  const sibs=[...folderListEl.querySelectorAll('.swipe-wrap:not(.dragging)')];
+  // compute desired index by comparing center against sibling midpoints
+  let target=0;
+  for(const s of sibs){
+    const r=s.getBoundingClientRect();
+    if(center > r.top+r.height/2) target++;
+    else break;
   }
-}
-function reorderFolderDOM(){
-  folders.forEach(f=>{ const w=folderListEl.querySelector('.swipe-wrap[data-fid="'+f.id+'"]'); if(w)folderListEl.appendChild(w); });
+  target=Math.max(0,Math.min(folders.length-1,target));
+  if(target!==fDrag.lastIndex){
+    const idx=folders.indexOf(fDrag.f);
+    folders.splice(idx,1); folders.splice(target,0,fDrag.f);
+    fDrag.lastIndex=target;
+    // move placeholder to new slot among the (non-dragging) rows
+    const ph=fDrag.placeholder;
+    const others=folders.filter(f=>f!==fDrag.f);
+    if(target>=others.length){ folderListEl.appendChild(ph); }
+    else {
+      const refF=others[target];
+      const refEl=folderListEl.querySelector('.swipe-wrap[data-fid="'+refF.id+'"]');
+      if(refEl) folderListEl.insertBefore(ph, refEl);
+    }
+    vib(6); // crossing a slot
+  }
 }
 async function endFolderDrag(){
   if(!fDrag)return;
-  fDrag.wrap.classList.remove('dragging');
-  fDrag.wrap.style.transform=''; fDrag.wrap.style.position=''; fDrag.wrap.style.zIndex='';
-  document.body.style.userSelect='';
+  const w=fDrag.wrap, ph=fDrag.placeholder;
+  // settle the row into the placeholder position
+  const r=ph.getBoundingClientRect();
+  w.style.transition='top .12s ease, left .12s ease';
+  w.style.top=r.top+'px'; w.style.left=r.left+'px';
+  setTimeout(()=>{
+    w.classList.remove('dragging');
+    w.style.position=''; w.style.left=''; w.style.top=''; w.style.width=''; w.style.zIndex=''; w.style.margin=''; w.style.transition='';
+    if(ph&&ph.parentNode){ ph.parentNode.insertBefore(w, ph); ph.remove(); }
+  },120);
   window.removeEventListener('touchmove',onFolderDragMove);
   window.removeEventListener('mousemove',onFolderDragMove);
   window.removeEventListener('touchend',endFolderDrag);
   window.removeEventListener('mouseup',endFolderDrag);
+  const moved=fDrag.lastIndex!==fDrag.fromIndex;
   fDrag=null;
   await persistFolderOrder();
-  showToast('폴더 순서를 저장했습니다');
+  if(moved){ vib(12); showToast('폴더 순서를 저장했습니다'); } // drop
 }
 
 async function renameFolder(f){
@@ -749,8 +780,17 @@ function toggleRec(){
 }
 function startRecUI(){ recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active'); recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},250); }
 function stopRecUI(){ bigRec.classList.remove('recording'); recBadge.classList.remove('active'); recTime.textContent='0:00'; clearInterval(recTimer); }
-bigPhoto.addEventListener('click',takePhoto); bigRec.addEventListener('click',toggleRec);
-$('capPhoto').addEventListener('click',openCamera);
+/* Capture buttons: fire once. Use touchend (preventDefault stops double-tap zoom),
+   fall back to click on non-touch. A guard prevents double execution. */
+function bindTap(el, fn){
+  let touched=false;
+  el.addEventListener('touchend',e=>{ e.preventDefault(); touched=true; fn(); setTimeout(()=>touched=false,400); },{passive:false});
+  el.addEventListener('click',()=>{ if(touched)return; fn(); });
+}
+bindTap(bigPhoto, takePhoto);
+bindTap(bigRec, toggleRec);
+bindTap($('capPhoto'), ()=>{ if(cam.classList.contains('open')) closeCamera(); else openCamera(); });
+/* capPhoto handled by bindTap above */
 
 /* audio */
 let audioRec=null,audioChunks=[];
@@ -763,9 +803,10 @@ async function startAudio(){
     audioRec.start(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
   }catch(e){ showToast('마이크 오류: '+e.name); }
 }
-$('capAudio').addEventListener('click',()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
+/* capAudio handled by bindTap (defined after deps) */
+bindTap($('capAudio'), ()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
 
-$('btnShrink').addEventListener('click',()=>{ document.body.classList.toggle('shrink'); $('btnShrink').classList.toggle('on',document.body.classList.contains('shrink')); });
+$('btnShrink').addEventListener('click',()=>{ document.body.classList.toggle('shrink'); const on=document.body.classList.contains('shrink'); $('btnShrink').classList.toggle('on',on); localStorage.setItem('shrinkMode',on?'1':'0'); });
 
 /* ===== Dark mode ===== */
 function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; localStorage.setItem(DARK_KEY,on?'1':'0'); }
@@ -797,6 +838,13 @@ listEl.addEventListener('scroll',closeAllRows); folderListEl.addEventListener('s
 
 /* restore prefs */
 applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
+/* thumbnails default to SMALL (shrink). Respect saved preference if user toggled before. */
+(function(){
+  const saved=localStorage.getItem('shrinkMode');
+  const small = saved===null ? true : saved==='1';
+  document.body.classList.toggle('shrink',small);
+  $('btnShrink').classList.toggle('on',small);
+})();
 init();
 </script>
 </body>
