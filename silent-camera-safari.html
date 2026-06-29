@@ -55,20 +55,32 @@
   .folder-row .f-icon { font-size:22px; }
   .folder-row .f-name { font-size:17px; font-weight:600; }
   .folder-row .f-count { font-size:14px; color:var(--sub); }
-  .folder-row .f-rename { border:none; background:none; color:var(--blue); font-size:14px; padding:4px 6px; }
+  .folder-row .f-chev { color:var(--sub); font-size:22px; }
+  /* hide swipe actions until the row is actually moved (prevents flash on render/scroll) */
+  .swipe-actions { visibility:hidden; }
+  .swipe-wrap.swiping .swipe-actions, .swipe-wrap.opened .swipe-actions { visibility:visible; }
 
   .editor { position:absolute; inset:0; background:var(--paper); display:none; flex-direction:column; }
   .editor.open { display:flex; }
   .editor .ed-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:.5px solid var(--border); background:var(--panel); }
-  .ed-top button { border:none; background:none; color:var(--blue); font-size:16px; font-weight:500; padding:8px 10px; }
+  .ed-top button { border:none; background:none; color:var(--blue); font-size:15px; font-weight:500; padding:8px 6px; }
   .ed-top .del { color:var(--red); }
   .editor .ed-body { flex:1; overflow-y:auto; padding:14px 16px; }
-  .editor input.ed-title { width:100%; border:none; background:transparent; outline:none; font-size:22px; font-weight:700; margin-bottom:8px; }
-  .editor textarea.ed-text { width:100%; min-height:140px; border:none; background:transparent; outline:none; font-size:16px; line-height:1.55; resize:none; font-family:inherit; }
+  .editor input.ed-title { width:100%; border:none; background:transparent; outline:none; font-size:22px; font-weight:700; margin-bottom:8px; color:var(--text); }
+  .editor input.ed-title::placeholder, .editor textarea.ed-text::placeholder { color:var(--sub); }
+  .editor textarea.ed-text { width:100%; min-height:140px; border:none; background:transparent; outline:none; font-size:16px; line-height:1.55; resize:none; font-family:inherit; color:var(--text); }
   /* editor media uses SAME 54px size as list */
   .ed-media { display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }
   .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; }
   body.shrink .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
+  .ed-loc { margin-top:16px; }
+  .loc-card { background:var(--chip); border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .loc-card .lc-info { font-size:14px; color:var(--text); line-height:1.5; }
+  .loc-card .lc-info .lc-coord { color:var(--sub); font-size:12px; font-variant-numeric:tabular-nums; }
+  .loc-card .lc-info .lc-status { font-size:12px; margin-top:2px; }
+  .loc-card .lc-status.armed { color:var(--green); }
+  .loc-card .lc-status.off { color:var(--sub); }
+  .loc-card .lc-remove { border:none; background:var(--chip2); color:var(--red); font-size:13px; padding:7px 12px; border-radius:8px; white-space:nowrap; }
 
   /* Camera floating window 1/3 + 20% opacity + draggable */
   .cam { position:absolute; right:12px; bottom:calc(150px + env(safe-area-inset-bottom)); width:44px; height:59px; background:#000; display:none; flex-direction:column; z-index:30; border-radius:10px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.35); border:1.5px solid rgba(255,255,255,.85); opacity:.2; touch-action:none; }
@@ -163,12 +175,16 @@
     <div class="editor" id="editor">
       <div class="ed-top">
         <button id="edBack">← 목록</button>
-        <button class="del" id="edDelete">삭제</button>
+        <div style="display:flex;gap:4px;">
+          <button id="edLocBtn">📍 위치 알림</button>
+          <button class="del" id="edDelete">삭제</button>
+        </div>
       </div>
       <div class="ed-body">
         <input class="ed-title" id="edTitle" placeholder="제목">
         <textarea class="ed-text" id="edText" placeholder="메모를 입력하세요…"></textarea>
         <div class="ed-media" id="edMedia"></div>
+      <div class="ed-loc" id="edLoc"></div>
       </div>
     </div>
 
@@ -219,15 +235,19 @@ function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,
   };
   r.onsuccess=e=>{db=e.target.result;res(db);}; r.onerror=e=>rej(e.target.error);});}
 function st(store,m){return db.transaction(store,m).objectStore(store);}
-function put(store,v){return new Promise((res,rej)=>{const r=st(store,'readwrite').put(v);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
+function cleanForSave(v){
+  if(v&&v.media){ v.media.forEach(m=>{ delete m._url; delete m._purl; }); }
+  return v;
+}
+function put(store,v){return new Promise((res,rej)=>{const r=st(store,'readwrite').put(store===NOTES?cleanForSave(v):v);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
 function del(store,id){return new Promise((res,rej)=>{const r=st(store,'readwrite').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
 function getAll(store){return new Promise((res,rej)=>{const r=st(store,'readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
 
-/* ===== blob URL cache ===== */
+/* ===== blob URL cache (attach url onto the media/blob to survive DB re-reads) ===== */
 const urlCache=new WeakMap();
 function blobURL(b){ if(!b)return''; if(urlCache.has(b))return urlCache.get(b); const u=URL.createObjectURL(b); urlCache.set(b,u); return u; }
-function mediaURL(m){ return m&&m.blob?blobURL(m.blob):''; }
-function posterURL(m){ return m&&m.poster?blobURL(m.poster):''; }
+function mediaURL(m){ if(!m||!m.blob)return''; if(m._url)return m._url; m._url=blobURL(m.blob); return m._url; }
+function posterURL(m){ if(!m||!m.poster)return''; if(m._purl)return m._purl; m._purl=blobURL(m.poster); return m._purl; }
 
 const $=id=>document.getElementById(id);
 const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
@@ -252,18 +272,19 @@ async function init(){
   const last=localStorage.getItem(LAST_KEY);
   currentFolderId = (last && folders.some(f=>f.id===last)) ? last : folders[0].id;
   showNotes();
+  ensureGeoWatch();
 }
 
 /* ===== swipe helper (iOS-style) ===== */
 function attachSwipe(content, actionWidth){
   let sx=0, sy=0, dx=0, dragging=false, locked=false, open=false;
-  const max=actionWidth;
-  function reset(){ content.style.transform='translateX(0)'; open=false; }
+  const max=actionWidth; const wrap=content.parentElement;
+  function reset(){ content.style.transform='translateX(0)'; open=false; wrap.classList.remove('opened','swiping'); }
   content._reset=reset;
   content.addEventListener('touchstart',e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dx=0; dragging=true; locked=false; content.style.transition='none'; },{passive:true});
   content.addEventListener('touchmove',e=>{
     if(!dragging)return; const t=e.touches[0]; const mx=t.clientX-sx, my=t.clientY-sy;
-    if(!locked){ if(Math.abs(mx)>Math.abs(my)+4){ locked=true; } else if(Math.abs(my)>8){ dragging=false; return; } }
+    if(!locked){ if(Math.abs(mx)>Math.abs(my)+4){ locked=true; wrap.classList.add('swiping'); } else if(Math.abs(my)>8){ dragging=false; return; } }
     if(!locked)return;
     let base=open?-max:0; dx=base+mx; if(dx>0)dx=0; if(dx<-max-30)dx=-max-30;
     content.style.transform='translateX('+dx+'px)';
@@ -271,7 +292,8 @@ function attachSwipe(content, actionWidth){
   },{passive:false});
   content.addEventListener('touchend',()=>{
     if(!dragging){return;} dragging=false; content.style.transition='transform .22s cubic-bezier(.25,.8,.3,1)';
-    if(dx < -max/2){ content.style.transform='translateX(-'+max+'px)'; open=true; } else { reset(); }
+    wrap.classList.remove('swiping');
+    if(dx < -max/2){ content.style.transform='translateX(-'+max+'px)'; open=true; wrap.classList.add('opened'); } else { reset(); }
   });
   return { reset };
 }
@@ -281,10 +303,10 @@ function closeAllRows(){ openRows.forEach(r=>r._reset&&r._reset()); }
 /* ===== NOTE LIST ===== */
 function mediaCell(m){
   if(m.kind==='video') return m.poster
-    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy"><span class="play-badge">▶</span></div>'
-    : '<div class="m"><video src="'+mediaURL(m)+'#t=0.1" muted playsinline preload="metadata"></video><span class="play-badge">▶</span></div>';
+    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🎬\',className:\'ph\'}))"><span class="play-badge">▶</span></div>'
+    : '<div class="m"><span class="ph">🎬</span><span class="play-badge">▶</span></div>';
   if(m.kind==='audio') return '<div class="m audio">🎙️</div>';
-  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy"></div>';
+  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🖼️\',className:\'ph\'}))"></div>';
 }
 function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
 function showNotes(){
@@ -356,20 +378,19 @@ function renderFolders(){
     const cnt=notes.filter(n=>n.folderId===f.id).length;
     const wrap=document.createElement('div'); wrap.className='swipe-wrap';
     wrap.innerHTML=
-      '<div class="swipe-actions"><button class="del">삭제</button></div>'+
+      '<div class="swipe-actions"><button class="edit">이름변경</button><button class="del">삭제</button></div>'+
       '<div class="swipe-content"><div class="folder-row">'+
         '<div class="f-left"><span class="f-icon">📁</span><div><div class="f-name">'+f.name+'</div><div class="f-count">'+cnt+'개</div></div></div>'+
-        '<button class="f-rename">이름변경</button>'+
+        '<span class="f-chev">›</span>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
     content.addEventListener('click',e=>{
-      if(e.target.classList.contains('f-rename'))return;
       if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; }
       currentFolderId=f.id; showNotes();
     });
-    wrap.querySelector('.f-rename').addEventListener('click',e=>{ e.stopPropagation(); renameFolder(f); });
+    wrap.querySelector('.edit').addEventListener('click',()=>{ closeAllRows(); renameFolder(f); });
     wrap.querySelector('.del').addEventListener('click',()=>{ closeAllRows(); deleteFolder(f); });
-    attachSwipe(content,72); openRows.push(content);
+    attachSwipe(content,144); openRows.push(content);
     folderListEl.appendChild(wrap);
   }
 }
@@ -421,11 +442,13 @@ function openEditor(note){
   current=note||{id:'n_'+Date.now(),title:'',text:'',media:[],folderId:currentFolderId,created:Date.now(),updated:Date.now()};
   $('edTitle').value=current.title||''; $('edText').value=current.text||'';
   renderEditorMedia(); editor.classList.add('open');
+  $('subbar').classList.add('hidden');
+  renderLocAlarm();
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
   closeCamera(); editor.classList.remove('open'); current=null;
-  if(view==='notes'){ $('btnNew').style.display='flex'; }
+  if(view==='notes'){ $('btnNew').style.display='flex'; $('subbar').classList.remove('hidden'); }
   $('btnSave').style.display='none';
   if(!silent && view==='notes') renderNotes();
 }
@@ -455,6 +478,74 @@ $('edBack').addEventListener('click',saveCurrent);
 $('btnSave').addEventListener('click',saveCurrent);
 $('edDelete').addEventListener('click',async()=>{ if(current&&current.id){ await del(NOTES,current.id); notes=notes.filter(n=>n.id!==current.id);} closeEditor(); });
 $('btnNew').addEventListener('click',()=>openEditor(null));
+
+/* ===== Location alarm (geofence, Haversine like geotask) ===== */
+const GEOFENCE_RADIUS=100; // meters
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function renderLocAlarm(){
+  const wrap=$('edLoc'); wrap.innerHTML='';
+  if(!current||!current.loc){ return; }
+  const l=current.loc;
+  const armed=l.enabled!==false;
+  wrap.innerHTML='<div class="loc-card"><div class="lc-info">📍 위치 알림'+
+    '<div class="lc-coord">'+l.lat.toFixed(5)+', '+l.lng.toFixed(5)+' (반경 '+GEOFENCE_RADIUS+'m)</div>'+
+    '<div class="lc-status '+(armed?'armed':'off')+'">'+(armed?'● 감시 중 — 이 위치 도착 시 알림':'○ 꺼짐')+'</div>'+
+    '</div><button class="lc-remove" id="locRemove">제거</button></div>';
+  $('locRemove').addEventListener('click',()=>{ delete current.loc; put(NOTES,current); renderLocAlarm(); ensureGeoWatch(); });
+}
+$('edLocBtn').addEventListener('click',()=>{
+  if(!current)openEditor(null);
+  if(!navigator.geolocation){ showToast('이 기기는 위치를 지원하지 않습니다'); return; }
+  maybeAskNotify();
+  showToast('현재 위치 확인 중…');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    current.loc={ lat:pos.coords.latitude, lng:pos.coords.longitude, enabled:true, lastInside:false };
+    current.updated=Date.now(); put(NOTES,current);
+    if(!notes.some(n=>n.id===current.id))notes.push(current);
+    renderLocAlarm(); ensureGeoWatch();
+    showToast('현재 좌표를 첨부했습니다');
+  },err=>{ showToast('위치 오류: '+err.message); },{enableHighAccuracy:true,timeout:10000});
+});
+
+/* geofence watcher: notifies when entering any note's saved location */
+let geoWatchId=null;
+function notesWithLoc(){ return notes.filter(n=>n.loc&&n.loc.enabled!==false); }
+function ensureGeoWatch(){
+  const need=notesWithLoc().length>0;
+  if(need && geoWatchId===null && navigator.geolocation){
+    geoWatchId=navigator.geolocation.watchPosition(onGeo,()=>{},{enableHighAccuracy:true,maximumAge:15000,timeout:20000});
+  } else if(!need && geoWatchId!==null){
+    navigator.geolocation.clearWatch(geoWatchId); geoWatchId=null;
+  }
+}
+function onGeo(pos){
+  const {latitude:la,longitude:lo}=pos.coords;
+  notesWithLoc().forEach(n=>{
+    const d=haversine(la,lo,n.loc.lat,n.loc.lng);
+    const inside=d<=GEOFENCE_RADIUS;
+    if(inside && !n.loc.lastInside){
+      n.loc.lastInside=true; put(NOTES,n);
+      fireLocAlert(n);
+    } else if(!inside && n.loc.lastInside){
+      n.loc.lastInside=false; put(NOTES,n);
+    }
+  });
+}
+function fireLocAlert(n){
+  const title=n.title||'메모';
+  if('Notification' in window && Notification.permission==='granted'){
+    new Notification('📍 '+title, { body:'저장한 위치에 도착했습니다' });
+  }
+  showToast('📍 "'+title+'" 위치에 도착했습니다');
+  try{ navigator.vibrate&&navigator.vibrate([200,100,200]); }catch(e){}
+}
+/* ask notification permission once when first arming a location */
+function maybeAskNotify(){ if('Notification' in window && Notification.permission==='default'){ Notification.requestPermission(); } }
 
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwStage=$('vwStage');
