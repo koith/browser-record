@@ -910,8 +910,25 @@ function toggleRec(){
   mediaRecorder.onstop=()=>{ stopRecUI(); attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType}),'video',poster); };
   mediaRecorder.start(); startRecUI();
 }
-function startRecUI(){ recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active'); recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},250); }
-function stopRecUI(){ bigRec.classList.remove('recording'); recBadge.classList.remove('active'); recTime.textContent='0:00'; clearInterval(recTimer); }
+/* ===== Screen Wake Lock: keep screen on during capture so auto-sleep
+   doesn't interrupt recording. (Manual lock / app backgrounding still
+   pauses on iOS — a platform limit no web app can override.) ===== */
+let wakeLock=null;
+async function acquireWakeLock(){
+  try{ if('wakeLock' in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{ wakeLock=null; }); } }catch(e){}
+}
+async function releaseWakeLock(){
+  try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(e){}
+}
+// re-acquire if the page becomes visible again while still recording
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){
+    const recording=(mediaRecorder&&mediaRecorder.state==='recording')||(typeof audioRec!=='undefined'&&audioRec&&audioRec.state==='recording');
+    if(recording) acquireWakeLock();
+  }
+});
+function startRecUI(){ acquireWakeLock(); recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active'); recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},250); }
+function stopRecUI(){ releaseWakeLock(); bigRec.classList.remove('recording'); recBadge.classList.remove('active'); recTime.textContent='0:00'; clearInterval(recTimer); }
 /* Capture buttons: fire once. Use touchend (preventDefault stops double-tap zoom),
    fall back to click on non-touch. A guard prevents double execution. */
 function bindTap(el, fn){
@@ -931,8 +948,8 @@ async function startAudio(){
   try{ const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
     audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
     audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio'); $('capAudio').classList.remove('on'); };
-    audioRec.start(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
+    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio'); $('capAudio').classList.remove('on'); };
+    audioRec.start(); acquireWakeLock(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
   }catch(e){ showToast('마이크 오류: '+e.name); }
 }
 /* capAudio handled by bindTap (defined after deps) */
@@ -1054,21 +1071,6 @@ $('importFile').addEventListener('change',async e=>{
   }catch(err){ showToast('복원 실패: '+err.message); }
   e.target.value='';
 });
-
-/* ===== Auto-stop capture on background / screen sleep =====
-   iOS pauses then resumes media when the screen sleeps, producing a single
-   stitched recording. We stop (and save) whatever is in progress instead. */
-function stopAllCaptureForBackground(){
-  let stopped=false;
-  if(mediaRecorder && mediaRecorder.state==='recording'){ try{ mediaRecorder.stop(); stopped=true; }catch(e){} }
-  if(audioRec && audioRec.state==='recording'){ try{ audioRec.stop(); stopped=true; }catch(e){} }
-  // release camera/mic so the recording can't silently continue
-  if(stream){ try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){} stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); }
-  if(stopped) showToast('백그라운드 전환으로 녹화를 저장했습니다');
-}
-document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopAllCaptureForBackground(); });
-window.addEventListener('pagehide', stopAllCaptureForBackground);
-window.addEventListener('blur',()=>{ /* some iOS sleep cases only fire blur */ if(document.hidden) stopAllCaptureForBackground(); });
 
 init();
 </script>
