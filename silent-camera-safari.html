@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>기록 카메라</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --safari-bg: #f6f6f6;
+    --safari-border: #d2d2d7;
+    --safari-text: #1d1d1f;
+    --safari-blue: #0a84ff;
+    --rec-red: #ff3b30;
+  }
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: #000;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; }
+
+  /* ===== Camera viewport ===== */
+  .viewport {
+    position: relative;
+    flex: 1;
+    background: #000;
+    overflow: hidden;
+  }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .viewport-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: #fff;
+    text-align: center;
+    padding: 24px;
+  }
+  .viewport-hint button {
+    margin-top: 8px;
+    background: var(--safari-blue);
+    color: #fff;
+    border: none;
+    padding: 12px 26px;
+    border-radius: 980px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .rec-badge {
+    position: absolute;
+    top: 14px; left: 14px;
+    display: none;
+    align-items: center;
+    gap: 7px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 980px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    backdrop-filter: blur(8px);
+  }
+  .rec-badge.active { display: flex; }
+  .rec-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--rec-red);
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.2; } }
+
+  .flash {
+    position: absolute; inset: 0;
+    background: #fff; opacity: 0;
+    pointer-events: none;
+  }
+  .flash.fire { animation: flash 0.32s ease-out; }
+  @keyframes flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+  /* ===== Captured thumbnail strip ===== */
+  .gallery {
+    position: absolute;
+    bottom: 12px; left: 12px; right: 12px;
+    display: flex; gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .gallery::-webkit-scrollbar { display: none; }
+  .gallery .item {
+    flex: 0 0 auto;
+    width: 58px; height: 58px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.85);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    position: relative;
+  }
+  .gallery .item img, .gallery .item video {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .gallery .item a.dl {
+    position: absolute; inset: 0;
+    display: flex; align-items: flex-end; justify-content: flex-end;
+  }
+  .gallery .item .tag {
+    position: absolute; top: 3px; left: 3px;
+    background: rgba(0,0,0,0.6); color:#fff;
+    font-size: 9px; padding: 1px 4px; border-radius: 4px;
+  }
+
+  /* ===== Safari bottom bar ===== */
+  .safari-bar {
+    background: var(--safari-bg);
+    border-top: 0.5px solid var(--safari-border);
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    flex: 0 0 auto;
+  }
+  .url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .url-field {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #e3e3e6;
+    border-radius: 11px;
+    padding: 8px 12px;
+    min-width: 0;
+  }
+  .url-field svg { flex: 0 0 auto; opacity: 0.5; }
+  .url-field input {
+    flex: 1;
+    border: none; background: transparent; outline: none;
+    font-size: 16px; color: var(--safari-text);
+    min-width: 0;
+  }
+  .url-field input::placeholder { color: #8e8e93; }
+
+  /* camera / record buttons */
+  .cam-btn {
+    flex: 0 0 auto;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    background: #e3e3e6;
+    color: var(--safari-text);
+    transition: transform 0.08s, background 0.2s;
+  }
+  .cam-btn:active { transform: scale(0.9); }
+  .cam-btn svg { width: 22px; height: 22px; }
+  .rec-btn.recording {
+    background: var(--rec-red);
+    color: #fff;
+  }
+  .rec-btn.recording .rec-square {
+    width: 14px; height: 14px; background: #fff; border-radius: 3px;
+  }
+
+  .toolbar {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    margin-top: 10px;
+    color: var(--safari-blue);
+  }
+  .toolbar svg { width: 24px; height: 24px; opacity: 0.85; }
+  .toolbar .disabled { opacity: 0.3; }
+</style>
+</head>
+<body>
+  <div class="viewport">
+    <video id="preview" playsinline autoplay muted></video>
+    <div class="flash" id="flash"></div>
+    <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
+    <div class="viewport-hint" id="hint">
+      <div style="font-size:15px; line-height:1.5; opacity:0.85;">카메라 권한을 허용하면<br>실시간 화면이 여기 표시됩니다</div>
+      <button id="startCam">카메라 켜기</button>
+    </div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+
+  <div class="safari-bar">
+    <div class="url-row">
+      <div class="url-field">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 11a4 4 0 108 0 4 4 0 00-8 0z" stroke="currentColor" stroke-width="2"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="urlInput" type="text" inputmode="url" placeholder="검색 또는 웹사이트 입력" value="기록 카메라">
+      </div>
+      <button class="cam-btn" id="photoBtn" aria-label="사진 촬영">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h1.5l1-1.5h5l1 1.5H20a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+      <button class="cam-btn rec-btn" id="recBtn" aria-label="녹화">
+        <span class="rec-dot-static"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></span>
+      </button>
+    </div>
+    <div class="toolbar">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="disabled" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0114-5l2-2v6h-6l2.2-2.2A6 6 0 106 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>
+    </div>
+  </div>
+
+<script>
+const video = document.getElementById('preview');
+const hint = document.getElementById('hint');
+const flash = document.getElementById('flash');
+const gallery = document.getElementById('gallery');
+const photoBtn = document.getElementById('photoBtn');
+const recBtn = document.getElementById('recBtn');
+const recBadge = document.getElementById('recBadge');
+const recTime = document.getElementById('recTime');
+
+let stream = null;
+let mediaRecorder = null;
+let recChunks = [];
+let recTimer = null;
+let recStart = 0;
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: true
+    });
+    video.srcObject = stream;
+    hint.style.display = 'none';
+  } catch (err) {
+    hint.querySelector('div').innerHTML =
+      '카메라를 열 수 없습니다.<br><span style="font-size:13px;opacity:0.7;">' +
+      err.name + ': ' + err.message + '</span>';
+  }
+}
+
+document.getElementById('startCam').addEventListener('click', startCamera);
+
+// ===== Photo capture (silent) =====
+photoBtn.addEventListener('click', () => {
+  if (!stream) { startCamera(); return; }
+  const track = stream.getVideoTracks()[0];
+  const settings = track.getSettings();
+  const canvas = document.createElement('canvas');
+  canvas.width = settings.width || video.videoWidth;
+  canvas.height = settings.height || video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  flash.classList.remove('fire'); void flash.offsetWidth; flash.classList.add('fire');
+
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    addThumb(url, 'IMG', url, 'photo_' + Date.now() + '.jpg');
+  }, 'image/jpeg', 0.92);
+});
+
+// ===== Video recording =====
+recBtn.addEventListener('click', () => {
+  if (!stream) { startCamera(); return; }
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  } else {
+    startRecording();
+  }
+});
+
+function startRecording() {
+  recChunks = [];
+  let mime = '';
+  for (const m of ['video/mp4', 'video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm']) {
+    if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+  }
+  mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  mediaRecorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recChunks, { type: mediaRecorder.mimeType });
+    const url = URL.createObjectURL(blob);
+    const ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+    addThumb(url, 'VID', url, 'video_' + Date.now() + '.' + ext, true);
+  };
+  mediaRecorder.start();
+  recStart = Date.now();
+  recBtn.classList.add('recording');
+  recBtn.innerHTML = '<span class="rec-square"></span>';
+  recBadge.classList.add('active');
+  recTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - recStart) / 1000);
+    recTime.textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }, 250);
+}
+
+if (window.MediaRecorder) {
+  const orig = MediaRecorder.prototype.stop;
+} 
+// reset button UI on stop
+const observer = () => {
+  if (mediaRecorder && mediaRecorder.state !== 'recording') {
+    recBtn.classList.remove('recording');
+    recBtn.innerHTML = '<span class="rec-dot-static"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></span>';
+    recBadge.classList.remove('active');
+    recTime.textContent = '0:00';
+    clearInterval(recTimer);
+  }
+};
+// hook stop via event
+document.addEventListener('click', () => setTimeout(() => {
+  if (mediaRecorder) mediaRecorder.addEventListener('stop', observer, { once: true });
+}, 0));
+
+function addThumb(thumbUrl, tag, dlUrl, filename, isVideo) {
+  const item = document.createElement('div');
+  item.className = 'item';
+  const media = isVideo
+    ? '<video src="'+thumbUrl+'" muted playsinline></video>'
+    : '<img src="'+thumbUrl+'">';
+  item.innerHTML = media +
+    '<span class="tag">'+tag+'</span>' +
+    '<a class="dl" href="'+dlUrl+'" download="'+filename+'"></a>';
+  gallery.prepend(item);
+  item.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = dlUrl; a.download = filename; a.click();
+  });
+}
+</script>
+</body>
+</html>
