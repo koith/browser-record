@@ -1055,6 +1055,21 @@ $('importFile').addEventListener('change',async e=>{
   e.target.value='';
 });
 
+/* ===== Auto-stop capture on background / screen sleep =====
+   iOS pauses then resumes media when the screen sleeps, producing a single
+   stitched recording. We stop (and save) whatever is in progress instead. */
+function stopAllCaptureForBackground(){
+  let stopped=false;
+  if(mediaRecorder && mediaRecorder.state==='recording'){ try{ mediaRecorder.stop(); stopped=true; }catch(e){} }
+  if(audioRec && audioRec.state==='recording'){ try{ audioRec.stop(); stopped=true; }catch(e){} }
+  // release camera/mic so the recording can't silently continue
+  if(stream){ try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){} stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); }
+  if(stopped) showToast('백그라운드 전환으로 녹화를 저장했습니다');
+}
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopAllCaptureForBackground(); });
+window.addEventListener('pagehide', stopAllCaptureForBackground);
+window.addEventListener('blur',()=>{ /* some iOS sleep cases only fire blur */ if(document.hidden) stopAllCaptureForBackground(); });
+
 init();
 </script>
 </body>
