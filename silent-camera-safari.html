@@ -3,336 +3,355 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>기록 카메라</title>
+<title>기록 메모</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   :root {
-    --safari-bg: #f6f6f6;
-    --safari-border: #d2d2d7;
-    --safari-text: #1d1d1f;
-    --safari-blue: #0a84ff;
-    --rec-red: #ff3b30;
+    --bg: #fbfbfd;
+    --panel: #ffffff;
+    --border: #e3e3e8;
+    --text: #1d1d1f;
+    --sub: #8a8a8e;
+    --blue: #0a84ff;
+    --red: #ff3b30;
+    --paper: #fffdf7;
   }
-  html, body {
-    height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    background: #000;
-    overflow: hidden;
-  }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
   body { display: flex; flex-direction: column; }
 
-  /* ===== Camera viewport ===== */
-  .viewport {
-    position: relative;
-    flex: 1;
-    background: #000;
-    overflow: hidden;
+  /* ===== Header ===== */
+  .header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+    border-bottom: 0.5px solid var(--border);
+    background: var(--panel);
   }
-  video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+  .header .title { font-size: 18px; font-weight: 700; }
+  .header .count { font-size: 13px; color: var(--sub); }
+
+  /* ===== Main area ===== */
+  .main { flex: 1; position: relative; overflow: hidden; }
+
+  /* List view */
+  .list { height: 100%; overflow-y: auto; padding: 8px 12px 12px; }
+  .empty { text-align: center; color: var(--sub); margin-top: 64px; font-size: 15px; line-height: 1.6; }
+  .note-card {
+    background: var(--panel); border: 0.5px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 10px;
   }
-  .viewport-hint {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    color: #fff;
-    text-align: center;
-    padding: 24px;
+  .note-card .nc-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .note-card .nc-preview { font-size: 14px; color: var(--sub); line-height: 1.45; max-height: 42px; overflow: hidden; }
+  .note-card .nc-meta { font-size: 12px; color: var(--sub); margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+  .note-card .nc-media { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .note-card .nc-media .m { width: 54px; height: 54px; border-radius: 8px; overflow: hidden; border: 0.5px solid var(--border); }
+  .note-card .nc-media .m img, .note-card .nc-media .m video { width: 100%; height: 100%; object-fit: cover; }
+
+  /* Editor view */
+  .editor { position: absolute; inset: 0; background: var(--paper); display: none; flex-direction: column; }
+  .editor.open { display: flex; }
+  .editor .ed-top {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 0.5px solid var(--border); background: var(--panel);
   }
-  .viewport-hint button {
-    margin-top: 8px;
-    background: var(--safari-blue);
-    color: #fff;
-    border: none;
-    padding: 12px 26px;
-    border-radius: 980px;
-    font-size: 16px;
-    font-weight: 600;
+  .ed-top button { border: none; background: none; color: var(--blue); font-size: 16px; font-weight: 500; padding: 4px 6px; }
+  .ed-top .del { color: var(--red); }
+  .editor .ed-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .editor input.ed-title {
+    width: 100%; border: none; background: transparent; outline: none;
+    font-size: 22px; font-weight: 700; margin-bottom: 8px;
   }
-  .rec-badge {
-    position: absolute;
-    top: 14px; left: 14px;
-    display: none;
-    align-items: center;
-    gap: 7px;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
-    padding: 6px 12px;
-    border-radius: 980px;
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    backdrop-filter: blur(8px);
+  .editor textarea.ed-text {
+    width: 100%; min-height: 140px; border: none; background: transparent; outline: none;
+    font-size: 16px; line-height: 1.55; resize: none; font-family: inherit;
   }
-  .rec-badge.active { display: flex; }
-  .rec-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--rec-red);
-    animation: blink 1s steps(2, start) infinite;
-  }
+  .ed-media { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+  .ed-media .m { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; border: 0.5px solid var(--border); background:#000; }
+  .ed-media .m img, .ed-media .m video { width: 100%; height: 100%; object-fit: cover; }
+  .ed-media .m .rm { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 14px; line-height: 22px; }
+
+  /* Camera overlay */
+  .cam { position: absolute; inset: 0; background: #000; display: none; flex-direction: column; z-index: 30; }
+  .cam.open { display: flex; }
+  .cam video { flex: 1; width: 100%; object-fit: cover; }
+  .cam .cam-top { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 16px; z-index: 2; }
+  .cam .cam-top button { background: rgba(0,0,0,0.5); color: #fff; border: none; border-radius: 980px; padding: 8px 16px; font-size: 15px; backdrop-filter: blur(8px); }
+  .cam .rec-badge { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 7px; background: rgba(0,0,0,0.55); color: #fff; padding: 6px 12px; border-radius: 980px; font-size: 13px; font-variant-numeric: tabular-nums; z-index: 2; }
+  .cam .rec-badge.active { display: flex; }
+  .cam .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); animation: blink 1s steps(2,start) infinite; }
   @keyframes blink { 50% { opacity: 0.2; } }
+  .cam .cam-shutter-row { position: absolute; bottom: calc(28px + env(safe-area-inset-bottom)); left: 0; right: 0; display: flex; justify-content: center; gap: 40px; align-items: center; z-index: 2; }
+  .cam .big { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; }
+  .cam .big .ic-square { width: 30px; height: 30px; border-radius: 8px; background: #fff; }
+  .cam .big .ic-circle { width: 30px; height: 30px; border-radius: 50%; background: var(--red); }
+  .cam .big.recording .ic-circle { border-radius: 6px; width: 26px; height: 26px; }
 
-  .flash {
-    position: absolute; inset: 0;
-    background: #fff; opacity: 0;
-    pointer-events: none;
-  }
-  .flash.fire { animation: flash 0.32s ease-out; }
-  @keyframes flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
-
-  /* ===== Captured thumbnail strip ===== */
-  .gallery {
-    position: absolute;
-    bottom: 12px; left: 12px; right: 12px;
-    display: flex; gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-  .gallery::-webkit-scrollbar { display: none; }
-  .gallery .item {
-    flex: 0 0 auto;
-    width: 58px; height: 58px;
-    border-radius: 10px;
-    overflow: hidden;
-    border: 2px solid rgba(255,255,255,0.85);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    position: relative;
-  }
-  .gallery .item img, .gallery .item video {
-    width: 100%; height: 100%; object-fit: cover;
-  }
-  .gallery .item a.dl {
-    position: absolute; inset: 0;
-    display: flex; align-items: flex-end; justify-content: flex-end;
-  }
-  .gallery .item .tag {
-    position: absolute; top: 3px; left: 3px;
-    background: rgba(0,0,0,0.6); color:#fff;
-    font-size: 9px; padding: 1px 4px; border-radius: 4px;
-  }
-
-  /* ===== Safari bottom bar ===== */
-  .safari-bar {
-    background: var(--safari-bg);
-    border-top: 0.5px solid var(--safari-border);
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-    flex: 0 0 auto;
-  }
-  .url-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .url-field {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: #e3e3e6;
-    border-radius: 11px;
-    padding: 8px 12px;
-    min-width: 0;
-  }
-  .url-field svg { flex: 0 0 auto; opacity: 0.5; }
-  .url-field input {
-    flex: 1;
-    border: none; background: transparent; outline: none;
-    font-size: 16px; color: var(--safari-text);
-    min-width: 0;
-  }
-  .url-field input::placeholder { color: #8e8e93; }
-
-  /* camera / record buttons */
-  .cam-btn {
-    flex: 0 0 auto;
-    width: 42px; height: 42px;
-    border-radius: 50%;
-    border: none;
-    display: flex; align-items: center; justify-content: center;
-    background: #e3e3e6;
-    color: var(--safari-text);
-    transition: transform 0.08s, background 0.2s;
-  }
-  .cam-btn:active { transform: scale(0.9); }
-  .cam-btn svg { width: 22px; height: 22px; }
-  .rec-btn.recording {
-    background: var(--rec-red);
-    color: #fff;
-  }
-  .rec-btn.recording .rec-square {
-    width: 14px; height: 14px; background: #fff; border-radius: 3px;
-  }
-
+  /* ===== Bottom toolbar (memo system) ===== */
   .toolbar {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    margin-top: 10px;
-    color: var(--safari-blue);
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    border-top: 0.5px solid var(--border);
+    background: var(--panel);
   }
-  .toolbar svg { width: 24px; height: 24px; opacity: 0.85; }
-  .toolbar .disabled { opacity: 0.3; }
+  .tb-btn {
+    flex: 0 0 auto; height: 44px; min-width: 44px; padding: 0 14px;
+    border-radius: 12px; border: none; background: #f0f0f3; color: var(--text);
+    font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 6px;
+  }
+  .tb-btn:active { background: #e3e3e8; }
+  .tb-btn.primary { background: var(--blue); color: #fff; }
+  .tb-btn svg { width: 20px; height: 20px; }
+  .tb-spacer { flex: 1; }
+  /* the two capture buttons pinned far right */
+  .cap-btn {
+    flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px; border: none;
+    display: flex; align-items: center; justify-content: center; background: #f0f0f3;
+  }
+  .cap-btn:active { background: #e3e3e8; }
+  .cap-btn .ic-square { width: 18px; height: 18px; border-radius: 5px; background: var(--text); }
+  .cap-btn .ic-circle { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--red); box-sizing: border-box; }
+
+  .toast { position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%) translateY(20px); background: rgba(0,0,0,0.8); color:#fff; padding: 10px 18px; border-radius: 980px; font-size: 14px; opacity: 0; transition: .25s; pointer-events: none; z-index: 40; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
-  <div class="viewport">
-    <video id="preview" playsinline autoplay muted></video>
-    <div class="flash" id="flash"></div>
-    <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
-    <div class="viewport-hint" id="hint">
-      <div style="font-size:15px; line-height:1.5; opacity:0.85;">카메라 권한을 허용하면<br>실시간 화면이 여기 표시됩니다</div>
-      <button id="startCam">카메라 켜기</button>
-    </div>
-    <div class="gallery" id="gallery"></div>
+  <div class="header">
+    <div class="title">기록 메모</div>
+    <div class="count" id="count"></div>
   </div>
 
-  <div class="safari-bar">
-    <div class="url-row">
-      <div class="url-field">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 11a4 4 0 108 0 4 4 0 00-8 0z" stroke="currentColor" stroke-width="2"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input id="urlInput" type="text" inputmode="url" placeholder="검색 또는 웹사이트 입력" value="기록 카메라">
+  <div class="main">
+    <!-- LIST -->
+    <div class="list" id="list">
+      <div class="empty" id="empty">저장된 메모가 없습니다.<br>아래 ‘새 메모’로 시작하세요.</div>
+    </div>
+
+    <!-- EDITOR -->
+    <div class="editor" id="editor">
+      <div class="ed-top">
+        <button id="edBack">← 목록</button>
+        <button class="del" id="edDelete">삭제</button>
       </div>
-      <button class="cam-btn" id="photoBtn" aria-label="사진 촬영">
-        <svg viewBox="0 0 24 24" fill="none"><path d="M4 8a2 2 0 012-2h1.5l1-1.5h5l1 1.5H20a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V8z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.7"/></svg>
-      </button>
-      <button class="cam-btn rec-btn" id="recBtn" aria-label="녹화">
-        <span class="rec-dot-static"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></span>
-      </button>
+      <div class="ed-body">
+        <input class="ed-title" id="edTitle" placeholder="제목">
+        <textarea class="ed-text" id="edText" placeholder="메모를 입력하세요…"></textarea>
+        <div class="ed-media" id="edMedia"></div>
+      </div>
     </div>
-    <div class="toolbar">
-      <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <svg class="disabled" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0114-5l2-2v6h-6l2.2-2.2A6 6 0 106 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-      <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><rect x="8" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>
+
+    <!-- CAMERA -->
+    <div class="cam" id="cam">
+      <div class="cam-top">
+        <button id="camClose">닫기</button>
+        <button id="camFlip">전환</button>
+      </div>
+      <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
+      <video id="preview" playsinline autoplay muted></video>
+      <div class="cam-shutter-row">
+        <div class="big" id="bigPhoto"><span class="ic-square"></span></div>
+        <div class="big" id="bigRec"><span class="ic-circle"></span></div>
+      </div>
     </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <!-- BOTTOM TOOLBAR -->
+  <div class="toolbar" id="toolbar">
+    <!-- memo system buttons -->
+    <button class="tb-btn primary" id="btnNew">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>새 메모
+    </button>
+    <button class="tb-btn" id="btnSave" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>저장
+    </button>
+    <div class="tb-spacer"></div>
+    <!-- two capture buttons at far right: square (photo) + circle (record) -->
+    <button class="cap-btn" id="capPhoto" aria-label="사진"><span class="ic-square"></span></button>
+    <button class="cap-btn" id="capRec" aria-label="녹화"><span class="ic-circle"></span></button>
   </div>
 
 <script>
-const video = document.getElementById('preview');
-const hint = document.getElementById('hint');
-const flash = document.getElementById('flash');
-const gallery = document.getElementById('gallery');
-const photoBtn = document.getElementById('photoBtn');
-const recBtn = document.getElementById('recBtn');
-const recBadge = document.getElementById('recBadge');
-const recTime = document.getElementById('recTime');
-
-let stream = null;
-let mediaRecorder = null;
-let recChunks = [];
-let recTimer = null;
-let recStart = 0;
-
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: true
-    });
-    video.srcObject = stream;
-    hint.style.display = 'none';
-  } catch (err) {
-    hint.querySelector('div').innerHTML =
-      '카메라를 열 수 없습니다.<br><span style="font-size:13px;opacity:0.7;">' +
-      err.name + ': ' + err.message + '</span>';
-  }
-}
-
-document.getElementById('startCam').addEventListener('click', startCamera);
-
-// ===== Photo capture (silent) =====
-photoBtn.addEventListener('click', () => {
-  if (!stream) { startCamera(); return; }
-  const track = stream.getVideoTracks()[0];
-  const settings = track.getSettings();
-  const canvas = document.createElement('canvas');
-  canvas.width = settings.width || video.videoWidth;
-  canvas.height = settings.height || video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  flash.classList.remove('fire'); void flash.offsetWidth; flash.classList.add('fire');
-
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    addThumb(url, 'IMG', url, 'photo_' + Date.now() + '.jpg');
-  }, 'image/jpeg', 0.92);
-});
-
-// ===== Video recording =====
-recBtn.addEventListener('click', () => {
-  if (!stream) { startCamera(); return; }
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  } else {
-    startRecording();
-  }
-});
-
-function startRecording() {
-  recChunks = [];
-  let mime = '';
-  for (const m of ['video/mp4', 'video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm']) {
-    if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
-  }
-  mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  mediaRecorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
-  mediaRecorder.onstop = () => {
-    const blob = new Blob(recChunks, { type: mediaRecorder.mimeType });
-    const url = URL.createObjectURL(blob);
-    const ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-    addThumb(url, 'VID', url, 'video_' + Date.now() + '.' + ext, true);
-  };
-  mediaRecorder.start();
-  recStart = Date.now();
-  recBtn.classList.add('recording');
-  recBtn.innerHTML = '<span class="rec-square"></span>';
-  recBadge.classList.add('active');
-  recTimer = setInterval(() => {
-    const s = Math.floor((Date.now() - recStart) / 1000);
-    recTime.textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
-  }, 250);
-}
-
-if (window.MediaRecorder) {
-  const orig = MediaRecorder.prototype.stop;
-} 
-// reset button UI on stop
-const observer = () => {
-  if (mediaRecorder && mediaRecorder.state !== 'recording') {
-    recBtn.classList.remove('recording');
-    recBtn.innerHTML = '<span class="rec-dot-static"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></span>';
-    recBadge.classList.remove('active');
-    recTime.textContent = '0:00';
-    clearInterval(recTimer);
-  }
-};
-// hook stop via event
-document.addEventListener('click', () => setTimeout(() => {
-  if (mediaRecorder) mediaRecorder.addEventListener('stop', observer, { once: true });
-}, 0));
-
-function addThumb(thumbUrl, tag, dlUrl, filename, isVideo) {
-  const item = document.createElement('div');
-  item.className = 'item';
-  const media = isVideo
-    ? '<video src="'+thumbUrl+'" muted playsinline></video>'
-    : '<img src="'+thumbUrl+'">';
-  item.innerHTML = media +
-    '<span class="tag">'+tag+'</span>' +
-    '<a class="dl" href="'+dlUrl+'" download="'+filename+'"></a>';
-  gallery.prepend(item);
-  item.addEventListener('click', () => {
-    const a = document.createElement('a');
-    a.href = dlUrl; a.download = filename; a.click();
+/* ========== IndexedDB layer ========== */
+const DB_NAME = 'memoDB', STORE = 'notes';
+let db;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
+    };
+    r.onsuccess = e => { db = e.target.result; res(db); };
+    r.onerror = e => rej(e.target.error);
   });
 }
+function tx(mode) { return db.transaction(STORE, mode).objectStore(STORE); }
+function putNote(note) { return new Promise((res, rej) => { const r = tx('readwrite').put(note); r.onsuccess = res; r.onerror = () => rej(r.error); }); }
+function deleteNote(id) { return new Promise((res, rej) => { const r = tx('readwrite').delete(id); r.onsuccess = res; r.onerror = () => rej(r.error); }); }
+function allNotes() { return new Promise((res, rej) => { const r = tx('readonly').getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); }
+
+/* ========== State ========== */
+let current = null; // note being edited
+let captureContext = 'editor'; // where capture results go
+
+const $ = id => document.getElementById(id);
+const listEl = $('list'), emptyEl = $('empty'), editor = $('editor'), cam = $('cam');
+const toolbar = $('toolbar'), btnNew = $('btnNew'), btnSave = $('btnSave');
+const toast = $('toast');
+let toastTimer;
+function showToast(m){ toast.textContent=m; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove('show'),2000); }
+
+/* ========== List rendering ========== */
+async function renderList() {
+  const notes = (await allNotes()).sort((a,b)=>b.updated-a.updated);
+  $('count').textContent = notes.length ? notes.length + '개' : '';
+  listEl.querySelectorAll('.note-card').forEach(n=>n.remove());
+  emptyEl.style.display = notes.length ? 'none' : 'block';
+  for (const n of notes) {
+    const card = document.createElement('div');
+    card.className = 'note-card';
+    const media = (n.media||[]).slice(0,4).map(m =>
+      '<div class="m">' + (m.kind==='video'
+        ? '<video src="'+URL.createObjectURL(m.blob)+'" muted playsinline></video>'
+        : '<img src="'+URL.createObjectURL(m.blob)+'">') + '</div>').join('');
+    card.innerHTML =
+      '<div class="nc-title">'+(n.title||'(제목 없음)')+'</div>' +
+      (n.text ? '<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>' : '') +
+      (media ? '<div class="nc-media">'+media+'</div>' : '') +
+      '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span>'+
+        ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>';
+    card.addEventListener('click', ()=>openEditor(n));
+    listEl.appendChild(card);
+  }
+}
+
+/* ========== Editor ========== */
+function openEditor(note) {
+  current = note || { id: 'n_'+Date.now(), title:'', text:'', media:[], created:Date.now(), updated:Date.now() };
+  $('edTitle').value = current.title || '';
+  $('edText').value = current.text || '';
+  renderEditorMedia();
+  editor.classList.add('open');
+  btnNew.style.display = 'none';
+  btnSave.style.display = 'flex';
+}
+function closeEditor() {
+  editor.classList.remove('open');
+  current = null;
+  btnNew.style.display = 'flex';
+  btnSave.style.display = 'none';
+  renderList();
+}
+function renderEditorMedia() {
+  const wrap = $('edMedia'); wrap.innerHTML = '';
+  (current.media||[]).forEach((m, i) => {
+    const el = document.createElement('div'); el.className = 'm';
+    el.innerHTML = (m.kind==='video'
+      ? '<video src="'+URL.createObjectURL(m.blob)+'" muted playsinline></video>'
+      : '<img src="'+URL.createObjectURL(m.blob)+'">') +
+      '<button class="rm" data-i="'+i+'">×</button>';
+    wrap.appendChild(el);
+  });
+  wrap.querySelectorAll('.rm').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    current.media.splice(+b.dataset.i, 1);
+    renderEditorMedia();
+  }));
+}
+async function saveCurrent() {
+  if (!current) return;
+  current.title = $('edTitle').value.trim();
+  current.text = $('edText').value;
+  current.updated = Date.now();
+  if (!current.title && !current.text && (!current.media || !current.media.length)) {
+    // nothing to save
+    closeEditor(); return;
+  }
+  await putNote(current);
+  showToast('저장되었습니다');
+  closeEditor();
+}
+
+$('edBack').addEventListener('click', saveCurrent);
+$('btnSave').addEventListener('click', saveCurrent);
+$('edDelete').addEventListener('click', async () => {
+  if (current && current.id) { await deleteNote(current.id); }
+  closeEditor();
+});
+btnNew.addEventListener('click', () => openEditor(null));
+
+/* ========== Camera ========== */
+let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0;
+const video = $('preview'), bigPhoto=$('bigPhoto'), bigRec=$('bigRec'), recBadge=$('recBadge'), recTime=$('recTime');
+
+async function startStream() {
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width:{ideal:1920}, height:{ideal:1080} }, audio: true
+  });
+  video.srcObject = stream;
+}
+async function openCamera(ctx) {
+  captureContext = ctx;
+  cam.classList.add('open');
+  try { await startStream(); }
+  catch(e){ showToast('카메라 오류: '+e.name); cam.classList.remove('open'); }
+}
+function closeCamera() {
+  if (mediaRecorder && mediaRecorder.state==='recording') mediaRecorder.stop();
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  stream=null; cam.classList.remove('open');
+}
+$('camClose').addEventListener('click', closeCamera);
+$('camFlip').addEventListener('click', async ()=>{ facing = facing==='environment'?'user':'environment'; try{await startStream();}catch(e){} });
+
+async function attachMedia(blob, kind) {
+  // If an editor note is open, attach to it; otherwise create a quick note.
+  if (!current) openEditor(null);
+  current.media = current.media || [];
+  current.media.push({ kind, blob });
+  current.updated = Date.now();
+  await putNote(current);          // persist immediately so capture is never lost
+  renderEditorMedia();
+  showToast(kind==='video'?'영상이 메모에 저장됨':'사진이 메모에 저장됨');
+}
+
+function takePhoto() {
+  if (!stream) return;
+  const s = stream.getVideoTracks()[0].getSettings();
+  const c = document.createElement('canvas');
+  c.width = s.width||video.videoWidth; c.height = s.height||video.videoHeight;
+  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
+  c.toBlob(b => { attachMedia(b,'photo'); }, 'image/jpeg', 0.92);
+}
+function toggleRec() {
+  if (!stream) return;
+  if (mediaRecorder && mediaRecorder.state==='recording') { mediaRecorder.stop(); return; }
+  recChunks=[];
+  let mime=''; for (const m of ['video/mp4','video/webm;codecs=h264','video/webm']) if (MediaRecorder.isTypeSupported(m)){mime=m;break;}
+  mediaRecorder = new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+  mediaRecorder.ondataavailable = e=>{ if(e.data.size) recChunks.push(e.data); };
+  mediaRecorder.onstop = ()=>{
+    bigRec.classList.remove('recording'); recBadge.classList.remove('active'); recTime.textContent='0:00'; clearInterval(recTimer);
+    const blob = new Blob(recChunks,{type:mediaRecorder.mimeType});
+    attachMedia(blob,'video');
+  };
+  mediaRecorder.start();
+  recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active');
+  recTimer=setInterval(()=>{ const s=Math.floor((Date.now()-recStart)/1000); recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); },250);
+}
+bigPhoto.addEventListener('click', takePhoto);
+bigRec.addEventListener('click', toggleRec);
+
+/* bottom toolbar capture buttons -> open camera */
+$('capPhoto').addEventListener('click', ()=>openCamera('editor'));
+$('capRec').addEventListener('click', ()=>openCamera('editor'));
+
+/* ========== Init ========== */
+(async ()=>{ await openDB(); await renderList(); })();
 </script>
 </body>
 </html>
