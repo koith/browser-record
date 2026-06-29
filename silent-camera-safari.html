@@ -6,15 +6,19 @@
 <title>기록 메모</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  :root { --bg:#fbfbfd; --panel:#fff; --border:#e3e3e8; --text:#1d1d1f; --sub:#8a8a8e; --blue:#0a84ff; --red:#ff3b30; --green:#34c759; --paper:#fffdf7; --chip:#f0f0f3; --chip2:#e3e3e8; }
-  body.dark { --bg:#000; --panel:#1c1c1e; --border:#38383a; --text:#f2f2f7; --sub:#8e8e93; --paper:#1c1c1e; --chip:#2c2c2e; --chip2:#3a3a3c; }
+  :root { --bg:#f7f6f3; --panel:#fff; --border:#eceae5; --text:#1a1a18; --sub:#9b9890; --blue:#0a84ff; --accent:#c8732e; --red:#d9543b; --green:#2e9e5b; --paper:#fffefb; --chip:#efece6; --chip2:#e3dfd7; }
+  body.dark { --bg:#0f0f0e; --panel:#1a1a18; --border:#2e2c28; --text:#f0eeea; --sub:#8a877f; --accent:#e08a45; --paper:#1a1a18; --chip:#262420; --chip2:#34312b; }
+  .folder-group { margin-bottom:18px; }
+  .folder-group .group-head { font-size:13px; font-weight:700; color:var(--accent); letter-spacing:.02em; padding:4px 4px 10px; display:flex; align-items:center; gap:6px; }
+  .folder-group .group-head span { color:var(--sub); font-weight:500; }
+  .folder-group .swipe-wrap { margin-bottom:8px; }
   html,body { height:100%; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
   body { display:flex; flex-direction:column; }
 
   .header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:calc(8px + env(safe-area-inset-top)) 14px 8px; border-bottom:.5px solid var(--border); background:var(--panel); }
   .header .h-left { display:flex; align-items:center; gap:8px; min-width:0; }
-  .header .folder-btn { border:none; background:var(--chip); color:var(--blue); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
-  .header .title { font-size:18px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .header .folder-btn { border:none; background:var(--chip); color:var(--accent); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
+  .header .title { font-size:20px; font-weight:700; letter-spacing:-0.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .header .count { font-size:13px; color:var(--sub); white-space:nowrap; }
 
   .main { flex:1; position:relative; overflow:hidden; }
@@ -24,7 +28,7 @@
   .search-field { flex:1; display:flex; align-items:center; gap:6px; background:var(--chip); border-radius:10px; padding:8px 10px; min-width:0; color:var(--sub); }
   .search-field input { flex:1; border:none; background:transparent; outline:none; font-size:15px; color:var(--text); min-width:0; }
   .search-field button { border:none; background:none; color:var(--sub); font-size:14px; padding:0 2px; }
-  .sort-btn { flex:0 0 auto; border:none; background:var(--chip); color:var(--blue); font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .sort-btn { flex:0 0 auto; border:none; background:var(--chip); color:var(--accent); font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; white-space:nowrap; }
 
   /* generic swipe row */
   .swipe-wrap { position:relative; overflow:hidden; border-radius:14px; margin-bottom:10px; }
@@ -65,12 +69,15 @@
   .editor .ed-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:.5px solid var(--border); background:var(--panel); }
   .ed-top button { border:none; background:none; color:var(--blue); font-size:15px; font-weight:500; padding:8px 6px; }
   .ed-top .del { color:var(--red); }
-  .editor .ed-body { flex:1; overflow-y:auto; padding:14px 16px; }
-  .editor input.ed-title { width:100%; border:none; background:transparent; outline:none; font-size:22px; font-weight:700; margin-bottom:8px; color:var(--text); }
-  .editor input.ed-title::placeholder, .editor textarea.ed-text::placeholder { color:var(--sub); }
-  .editor textarea.ed-text { width:100%; min-height:140px; border:none; background:transparent; outline:none; font-size:16px; line-height:1.55; resize:none; font-family:inherit; color:var(--text); }
-  /* editor media uses SAME 54px size as list */
-  .ed-media { display:flex; flex-wrap:wrap; gap:6px; margin-top:16px; }
+  .editor .ed-body { flex:1; overflow-y:auto; padding:18px 20px 8px; display:flex; flex-direction:column; }
+  .editor input.ed-title { width:100%; border:none; background:transparent; outline:none; font-size:25px; font-weight:700; letter-spacing:-0.02em; margin-bottom:10px; color:var(--text); }
+  .editor input.ed-title::placeholder, .editor textarea.ed-text::placeholder { color:var(--sub); opacity:.6; }
+  .editor textarea.ed-text { flex:1; width:100%; min-height:120px; border:none; background:transparent; outline:none; font-size:17px; line-height:1.65; resize:none; font-family:inherit; color:var(--text); }
+  /* attachments: capped to ~1/3 of editor height, horizontally scrollable */
+  .ed-attach { flex:0 0 auto; max-height:33vh; overflow-y:auto; border-top:.5px solid var(--border); margin:8px -20px 0; padding:12px 20px calc(8px + env(safe-area-inset-bottom)); }
+  .ed-attach.empty { border-top:none; }
+  .ed-attach-label { font-size:12px; font-weight:600; color:var(--sub); letter-spacing:.03em; text-transform:uppercase; margin-bottom:8px; }
+  .ed-media { display:flex; flex-wrap:wrap; gap:8px; }
   .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; }
   body.shrink .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
   .ed-loc { margin-top:16px; }
@@ -118,7 +125,7 @@
   .toolbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:.5px solid var(--border); background:var(--panel); }
   .tb-btn { flex:0 0 auto; height:44px; min-width:44px; padding:0 14px; border-radius:12px; border:none; background:var(--chip); color:var(--text); font-size:15px; font-weight:500; display:flex; align-items:center; gap:6px; }
   .tb-btn:active { background:var(--chip2); }
-  .tb-btn.primary { background:var(--blue); color:#fff; }
+  .tb-btn.primary { background:var(--accent); color:#fff; }
   .tb-btn.on { background:var(--blue); color:#fff; }
   .tb-btn svg { width:20px; height:20px; }
   .tb-spacer { flex:1; }
@@ -183,8 +190,11 @@
       <div class="ed-body">
         <input class="ed-title" id="edTitle" placeholder="제목">
         <textarea class="ed-text" id="edText" placeholder="메모를 입력하세요…"></textarea>
-        <div class="ed-media" id="edMedia"></div>
-      <div class="ed-loc" id="edLoc"></div>
+        <div class="ed-attach" id="edAttach">
+          <div class="ed-attach-label" id="edAttachLabel">첨부</div>
+          <div class="ed-media" id="edMedia"></div>
+          <div class="ed-loc" id="edLoc"></div>
+        </div>
       </div>
     </div>
 
@@ -312,7 +322,8 @@ function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folder
 function showNotes(){
   view='notes'; closeEditor(true);
   folderListEl.style.display='none'; listEl.style.display='block';
-  $('subbar').classList.remove('hidden');
+  $('subbar').classList.remove('hidden'); $('sortBtn').style.display='block';
+  $('searchInput').placeholder='메모 검색';
   $('title').textContent=currentFolder().name;
   $('btnNew').style.display='flex'; $('btnNewFolder').style.display='none';
   localStorage.setItem(LAST_KEY,currentFolderId);
@@ -364,14 +375,48 @@ function renderNotes(){
 function showFolders(){
   view='folders'; closeEditor(true); closeCamera();
   listEl.style.display='none'; folderListEl.style.display='block'; editor.classList.remove('open');
-  $('subbar').classList.add('hidden');
+  $('subbar').classList.remove('hidden'); $('sortBtn').style.display='none';
+  $('searchInput').placeholder='모든 폴더 검색';
   $('title').textContent='폴더';
   $('count').textContent=folders.length+'개';
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='flex'; $('btnSave').style.display='none';
   renderFolders();
 }
 function renderFolders(){
-  folderListEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());
+  folderListEl.querySelectorAll('.swipe-wrap, .folder-group').forEach(n=>n.remove());
+  // SEARCH MODE: group matching notes by folder
+  if(searchQuery){
+    $('folderEmpty').style.display='none';
+    const q=searchQuery.toLowerCase();
+    const matches=notes.filter(n=>((n.title||'')+' '+(n.text||'')).toLowerCase().includes(q));
+    $('count').textContent=matches.length+'건';
+    if(!matches.length){
+      const e=document.createElement('div'); e.className='folder-group'; e.style.cssText='text-align:center;color:var(--sub);margin-top:48px;font-size:15px;';
+      e.textContent='검색 결과가 없습니다.'; folderListEl.appendChild(e); return;
+    }
+    folders.forEach(f=>{
+      const fnotes=sortNotes(matches.filter(n=>n.folderId===f.id));
+      if(!fnotes.length)return;
+      const grp=document.createElement('div'); grp.className='folder-group';
+      grp.innerHTML='<div class="group-head">📁 '+f.name+' <span>'+fnotes.length+'</span></div>';
+      fnotes.forEach(n=>{
+        const wrap=document.createElement('div'); wrap.className='swipe-wrap';
+        const media=(n.media||[]).slice(0,4).map(mediaCell).join('');
+        wrap.innerHTML='<div class="swipe-content"><div class="note-card">'+
+          '<div class="nc-title">'+(n.title||'(제목 없음)')+'</div>'+
+          (n.text?'<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>':'')+
+          (media?'<div class="nc-media">'+media+'</div>':'')+
+          '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span></div>'+
+          '</div></div>';
+        wrap.querySelector('.swipe-content').addEventListener('click',()=>{ currentFolderId=f.id; showNotes(); setTimeout(()=>openEditor(n),0); });
+        grp.appendChild(wrap);
+      });
+      folderListEl.appendChild(grp);
+    });
+    return;
+  }
+  // NORMAL MODE: folder list
+  $('count').textContent=folders.length+'개';
   $('folderEmpty').style.display=folders.length?'none':'block';
   openRows=[];
   for(const f of folders){
@@ -438,12 +483,19 @@ function openMoveSheet(note){
 }
 
 /* ===== EDITOR ===== */
+function noteHasContent(){
+  return !!(current && ((current.title&&current.title.trim()) || (current.text&&current.text.trim()) || (current.media&&current.media.length) || current.loc));
+}
+function updateDeleteBtn(){
+  const has = !!($('edTitle').value.trim() || $('edText').value.trim() || (current&&current.media&&current.media.length) || (current&&current.loc));
+  $('edDelete').style.display = has ? 'block' : 'none';
+}
 function openEditor(note){
   current=note||{id:'n_'+Date.now(),title:'',text:'',media:[],folderId:currentFolderId,created:Date.now(),updated:Date.now()};
   $('edTitle').value=current.title||''; $('edText').value=current.text||'';
   renderEditorMedia(); editor.classList.add('open');
   $('subbar').classList.add('hidden');
-  renderLocAlarm();
+  renderLocAlarm(); updateDeleteBtn();
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
@@ -465,6 +517,15 @@ function renderEditorMedia(){
     wrap.appendChild(el);
   });
   wrap.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); current.media.splice(+b.dataset.i,1); put(NOTES,current); renderEditorMedia(); }));
+  updateAttachVisibility();
+}
+function updateAttachVisibility(){
+  const hasMedia=current&&current.media&&current.media.length;
+  const hasLoc=current&&current.loc;
+  const any=hasMedia||hasLoc;
+  $('edAttach').classList.toggle('empty',!any);
+  $('edAttachLabel').style.display=any?'block':'none';
+  if(typeof updateDeleteBtn==='function')updateDeleteBtn();
 }
 async function saveCurrent(){
   if(!current)return;
@@ -476,6 +537,8 @@ async function saveCurrent(){
 }
 $('edBack').addEventListener('click',saveCurrent);
 $('btnSave').addEventListener('click',saveCurrent);
+$('edTitle').addEventListener('input',updateDeleteBtn);
+$('edText').addEventListener('input',updateDeleteBtn);
 $('edDelete').addEventListener('click',async()=>{ if(current&&current.id){ await del(NOTES,current.id); notes=notes.filter(n=>n.id!==current.id);} closeEditor(); });
 $('btnNew').addEventListener('click',()=>openEditor(null));
 
@@ -489,7 +552,7 @@ function haversine(lat1,lon1,lat2,lon2){
 }
 function renderLocAlarm(){
   const wrap=$('edLoc'); wrap.innerHTML='';
-  if(!current||!current.loc){ return; }
+  if(!current||!current.loc){ updateAttachVisibility&&updateAttachVisibility(); return; }
   const l=current.loc;
   const armed=l.enabled!==false;
   wrap.innerHTML='<div class="loc-card"><div class="lc-info">📍 위치 알림'+
@@ -497,6 +560,7 @@ function renderLocAlarm(){
     '<div class="lc-status '+(armed?'armed':'off')+'">'+(armed?'● 감시 중 — 이 위치 도착 시 알림':'○ 꺼짐')+'</div>'+
     '</div><button class="lc-remove" id="locRemove">제거</button></div>';
   $('locRemove').addEventListener('click',()=>{ delete current.loc; put(NOTES,current); renderLocAlarm(); ensureGeoWatch(); });
+  updateAttachVisibility&&updateAttachVisibility();
 }
 $('edLocBtn').addEventListener('click',()=>{
   if(!current)openEditor(null);
@@ -644,9 +708,9 @@ $('btnDark').addEventListener('click',()=>applyDark(!document.body.classList.con
 $('searchInput').addEventListener('input',e=>{
   searchQuery=e.target.value.trim();
   $('searchClear').style.display=searchQuery?'block':'none';
-  if(view==='notes')renderNotes();
+  if(view==='notes')renderNotes(); else renderFolders();
 });
-$('searchClear').addEventListener('click',()=>{ $('searchInput').value=''; searchQuery=''; $('searchClear').style.display='none'; renderNotes(); });
+$('searchClear').addEventListener('click',()=>{ $('searchInput').value=''; searchQuery=''; $('searchClear').style.display='none'; if(view==='notes')renderNotes(); else renderFolders(); });
 
 /* ===== Sort ===== */
 const SORT_LABELS={updated_desc:'수정 최신순',updated_asc:'수정 오래된순',created_desc:'생성 최신순',created_asc:'생성 오래된순',title_asc:'제목 가나다순',title_desc:'제목 역순'};
