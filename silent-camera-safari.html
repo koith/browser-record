@@ -60,6 +60,10 @@
   .folder-row .f-name { font-size:17px; font-weight:600; }
   .folder-row .f-count { font-size:14px; color:var(--sub); }
   .folder-row .f-chev { color:var(--sub); font-size:22px; }
+  .folder-row .f-handle { color:var(--sub); font-size:20px; padding:0 4px 0 10px; touch-action:none; cursor:grab; }
+  .swipe-wrap.dragging { opacity:.85; }
+  .swipe-wrap.dragging .swipe-content { box-shadow:0 8px 24px rgba(0,0,0,.25); }
+  .swipe-wrap.drag-placeholder { opacity:.35; }
   /* hide swipe actions until the row is actually moved (prevents flash on render/scroll) */
   .swipe-actions { visibility:hidden; }
   .swipe-wrap.swiping .swipe-actions, .swipe-wrap.opened .swipe-actions { visibility:visible; }
@@ -273,9 +277,13 @@ let searchQuery='';
 async function init(){
   await openDB();
   folders=await getAll(FOLDERS);
-  if(!folders.length){ const f={id:'f_default',name:'메모',created:Date.now()}; await put(FOLDERS,f); folders=[f]; }
+  if(!folders.length){ const f={id:'f_default',name:'메모',created:Date.now(),order:0}; await put(FOLDERS,f); folders=[f]; }
+  // assign order to any folders missing it (migration), preserving current array order
+  let needOrder=false;
+  folders.forEach((f,i)=>{ if(typeof f.order!=='number'){ f.order=i; needOrder=true; } });
+  if(needOrder){ for(const f of folders) await put(FOLDERS,f); }
+  sortFolders();
   notes=await getAll(NOTES);
-  // migrate notes without folderId into default
   let migrated=false;
   for(const n of notes){ if(!n.folderId){ n.folderId=folders[0].id; await put(NOTES,n); migrated=true; } }
   if(migrated) notes=await getAll(NOTES);
@@ -284,6 +292,11 @@ async function init(){
   showNotes();
   ensureGeoWatch();
 }
+function sortFolders(){ folders.sort((a,b)=>(a.order||0)-(b.order||0)); }
+async function persistFolderOrder(){
+  folders.forEach((f,i)=>{ f.order=i; });
+  for(const f of folders) await put(FOLDERS,f);
+}
 
 /* ===== swipe helper (iOS-style) ===== */
 function attachSwipe(content, actionWidth){
@@ -291,7 +304,7 @@ function attachSwipe(content, actionWidth){
   const max=actionWidth; const wrap=content.parentElement;
   function reset(){ content.style.transform='translateX(0)'; open=false; wrap.classList.remove('opened','swiping'); }
   content._reset=reset;
-  content.addEventListener('touchstart',e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dx=0; dragging=true; locked=false; content.style.transition='none'; },{passive:true});
+  content.addEventListener('touchstart',e=>{ if(e.target.classList.contains('f-handle')){dragging=false;return;} const t=e.touches[0]; sx=t.clientX; sy=t.clientY; dx=0; dragging=true; locked=false; content.style.transition='none'; },{passive:true});
   content.addEventListener('touchmove',e=>{
     if(!dragging)return; const t=e.touches[0]; const mx=t.clientX-sx, my=t.clientY-sy;
     if(!locked){ if(Math.abs(mx)>Math.abs(my)+4){ locked=true; wrap.classList.add('swiping'); } else if(Math.abs(my)>8){ dragging=false; return; } }
@@ -421,12 +434,12 @@ function renderFolders(){
   openRows=[];
   for(const f of folders){
     const cnt=notes.filter(n=>n.folderId===f.id).length;
-    const wrap=document.createElement('div'); wrap.className='swipe-wrap';
+    const wrap=document.createElement('div'); wrap.className='swipe-wrap'; wrap.dataset.fid=f.id;
     wrap.innerHTML=
       '<div class="swipe-actions"><button class="edit">이름변경</button><button class="del">삭제</button></div>'+
       '<div class="swipe-content"><div class="folder-row">'+
         '<div class="f-left"><span class="f-icon">📁</span><div><div class="f-name">'+f.name+'</div><div class="f-count">'+cnt+'개</div></div></div>'+
-        '<span class="f-chev">›</span>'+
+        '<span class="f-handle" aria-label="순서 변경">≡</span>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
     content.addEventListener('click',e=>{
@@ -435,10 +448,64 @@ function renderFolders(){
     });
     wrap.querySelector('.edit').addEventListener('click',()=>{ closeAllRows(); renameFolder(f); });
     wrap.querySelector('.del').addEventListener('click',()=>{ closeAllRows(); deleteFolder(f); });
+    wrap.querySelector('.f-handle').addEventListener('touchstart',e=>startFolderDrag(e,wrap,f),{passive:false});
+    wrap.querySelector('.f-handle').addEventListener('mousedown',e=>startFolderDrag(e,wrap,f));
     attachSwipe(content,144); openRows.push(content);
     folderListEl.appendChild(wrap);
   }
 }
+
+/* ===== Folder drag-to-reorder (Apple Notes style handle) ===== */
+let fDrag=null;
+function startFolderDrag(e,wrap,f){
+  e.preventDefault(); e.stopPropagation();
+  closeAllRows();
+  const rows=[...folderListEl.querySelectorAll('.swipe-wrap')];
+  const startY=(e.touches?e.touches[0]:e).clientY;
+  const rect=wrap.getBoundingClientRect();
+  fDrag={ wrap, f, rows, startY, offset:0, h:rect.height };
+  wrap.classList.add('dragging');
+  document.body.style.userSelect='none';
+  window.addEventListener('touchmove',onFolderDragMove,{passive:false});
+  window.addEventListener('mousemove',onFolderDragMove);
+  window.addEventListener('touchend',endFolderDrag);
+  window.addEventListener('mouseend',endFolderDrag);
+  window.addEventListener('mouseup',endFolderDrag);
+}
+function onFolderDragMove(e){
+  if(!fDrag)return; e.preventDefault();
+  const y=(e.touches?e.touches[0]:e).clientY;
+  fDrag.offset=y-fDrag.startY;
+  fDrag.wrap.style.transform='translateY('+fDrag.offset+'px)';
+  fDrag.wrap.style.position='relative'; fDrag.wrap.style.zIndex='10';
+  // determine target index based on midpoint crossing
+  const idx=folders.indexOf(fDrag.f);
+  const moved=Math.round(fDrag.offset/fDrag.h);
+  let target=Math.max(0,Math.min(folders.length-1,idx+moved));
+  if(target!==idx){
+    folders.splice(idx,1); folders.splice(target,0,fDrag.f);
+    reorderFolderDOM();
+    // keep dragged element following finger: recompute startY baseline
+    fDrag.startY=y; fDrag.offset=0; fDrag.wrap.style.transform='translateY(0)';
+  }
+}
+function reorderFolderDOM(){
+  folders.forEach(f=>{ const w=folderListEl.querySelector('.swipe-wrap[data-fid="'+f.id+'"]'); if(w)folderListEl.appendChild(w); });
+}
+async function endFolderDrag(){
+  if(!fDrag)return;
+  fDrag.wrap.classList.remove('dragging');
+  fDrag.wrap.style.transform=''; fDrag.wrap.style.position=''; fDrag.wrap.style.zIndex='';
+  document.body.style.userSelect='';
+  window.removeEventListener('touchmove',onFolderDragMove);
+  window.removeEventListener('mousemove',onFolderDragMove);
+  window.removeEventListener('touchend',endFolderDrag);
+  window.removeEventListener('mouseup',endFolderDrag);
+  fDrag=null;
+  await persistFolderOrder();
+  showToast('폴더 순서를 저장했습니다');
+}
+
 async function renameFolder(f){
   const name=prompt('폴더 이름',f.name);
   if(name===null)return; const nm=name.trim(); if(!nm)return;
@@ -458,7 +525,7 @@ async function deleteFolder(f){
 async function newFolder(){
   const name=prompt('새 폴더 이름','');
   if(name===null)return; const nm=name.trim(); if(!nm)return;
-  const f={id:'f_'+Date.now(),name:nm,created:Date.now()};
+  const f={id:'f_'+Date.now(),name:nm,created:Date.now(),order:folders.length};
   await put(FOLDERS,f); folders.push(f); renderFolders();
 }
 $('folderBtn').addEventListener('click',()=>{ if(view==='folders')showNotes(); else showFolders(); });
@@ -718,12 +785,11 @@ function updateSortLabel(){ $('sortBtn').textContent='정렬: '+SORT_LABELS[sort
 $('sortBtn').addEventListener('click',()=>{
   let html='<div class="sheet"><div class="sh-title">정렬 방식</div>';
   Object.keys(SORT_LABELS).forEach(k=>{ html+='<div class="sh-item" data-sort="'+k+'">'+SORT_LABELS[k]+(k===sortMode?' ✓':'')+'</div>'; });
-  html+='</div><div class="sh-cancel" id="shCancel2">취소</div>';
+  html+='</div>';
   sheetHost.innerHTML=html; sheetBg.classList.add('open');
   sheetHost.querySelectorAll('.sh-item[data-sort]').forEach(el=>el.addEventListener('click',()=>{
     sortMode=el.dataset.sort; localStorage.setItem(SORT_KEY,sortMode); updateSortLabel(); closeSheet(); renderNotes();
   }));
-  $('shCancel2').addEventListener('click',closeSheet);
 });
 
 /* close swipe rows when tapping elsewhere */
