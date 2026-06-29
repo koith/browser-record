@@ -6,17 +6,25 @@
 <title>기록 메모</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  :root { --bg:#fbfbfd; --panel:#fff; --border:#e3e3e8; --text:#1d1d1f; --sub:#8a8a8e; --blue:#0a84ff; --red:#ff3b30; --green:#34c759; --paper:#fffdf7; }
+  :root { --bg:#fbfbfd; --panel:#fff; --border:#e3e3e8; --text:#1d1d1f; --sub:#8a8a8e; --blue:#0a84ff; --red:#ff3b30; --green:#34c759; --paper:#fffdf7; --chip:#f0f0f3; --chip2:#e3e3e8; }
+  body.dark { --bg:#000; --panel:#1c1c1e; --border:#38383a; --text:#f2f2f7; --sub:#8e8e93; --paper:#1c1c1e; --chip:#2c2c2e; --chip2:#3a3a3c; }
   html,body { height:100%; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
   body { display:flex; flex-direction:column; }
 
   .header { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:calc(8px + env(safe-area-inset-top)) 14px 8px; border-bottom:.5px solid var(--border); background:var(--panel); }
   .header .h-left { display:flex; align-items:center; gap:8px; min-width:0; }
-  .header .folder-btn { border:none; background:#f0f0f3; color:var(--blue); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
+  .header .folder-btn { border:none; background:var(--chip); color:var(--blue); font-size:14px; font-weight:600; padding:7px 12px; border-radius:10px; display:flex; align-items:center; gap:4px; white-space:nowrap; }
   .header .title { font-size:18px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .header .count { font-size:13px; color:var(--sub); white-space:nowrap; }
 
   .main { flex:1; position:relative; overflow:hidden; }
+
+  .subbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 14px; background:var(--panel); border-bottom:.5px solid var(--border); }
+  .subbar.hidden { display:none; }
+  .search-field { flex:1; display:flex; align-items:center; gap:6px; background:var(--chip); border-radius:10px; padding:8px 10px; min-width:0; color:var(--sub); }
+  .search-field input { flex:1; border:none; background:transparent; outline:none; font-size:15px; color:var(--text); min-width:0; }
+  .search-field button { border:none; background:none; color:var(--sub); font-size:14px; padding:0 2px; }
+  .sort-btn { flex:0 0 auto; border:none; background:var(--chip); color:var(--blue); font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; white-space:nowrap; }
 
   /* generic swipe row */
   .swipe-wrap { position:relative; overflow:hidden; border-radius:14px; margin-bottom:10px; }
@@ -79,9 +87,11 @@
   .cap-dock.open { display:flex; }
   .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; }
   .cap-dock .big:active { transform:scale(.92); }
-  .cap-dock .big .ic-square { width:22px; height:22px; border-radius:6px; background:var(--text); }
-  .cap-dock .big .ic-circle { width:22px; height:22px; border-radius:50%; border:4px solid var(--red); box-sizing:border-box; }
-  .cap-dock .big.recording .ic-circle { border-radius:5px; background:var(--red); width:18px; height:18px; border-width:0; }
+  /* photo = triangle */
+  .cap-dock .big .ic-tri { width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-bottom:21px solid var(--text); }
+  /* video = square (blue when recording, neutral otherwise; no red) */
+  .cap-dock .big .ic-sq { width:22px; height:22px; border-radius:5px; border:3px solid var(--text); box-sizing:border-box; }
+  .cap-dock .big.recording .ic-sq { background:var(--blue); border-color:var(--blue); border-radius:4px; }
 
   .viewer { position:absolute; inset:0; background:rgba(0,0,0,.94); display:none; flex-direction:column; z-index:50; }
   .viewer.open { display:flex; }
@@ -94,16 +104,18 @@
   .viewer .vw-bottom button { background:var(--blue); color:#fff; border:none; border-radius:12px; padding:13px 26px; font-size:16px; font-weight:600; }
 
   .toolbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:.5px solid var(--border); background:var(--panel); }
-  .tb-btn { flex:0 0 auto; height:44px; min-width:44px; padding:0 14px; border-radius:12px; border:none; background:#f0f0f3; color:var(--text); font-size:15px; font-weight:500; display:flex; align-items:center; gap:6px; }
-  .tb-btn:active { background:#e3e3e8; }
+  .tb-btn { flex:0 0 auto; height:44px; min-width:44px; padding:0 14px; border-radius:12px; border:none; background:var(--chip); color:var(--text); font-size:15px; font-weight:500; display:flex; align-items:center; gap:6px; }
+  .tb-btn:active { background:var(--chip2); }
   .tb-btn.primary { background:var(--blue); color:#fff; }
   .tb-btn.on { background:var(--blue); color:#fff; }
   .tb-btn svg { width:20px; height:20px; }
   .tb-spacer { flex:1; }
-  .cap-btn { flex:0 0 auto; width:44px; height:44px; border-radius:12px; border:none; display:flex; align-items:center; justify-content:center; background:#f0f0f3; }
-  .cap-btn:active { background:#e3e3e8; }
+  .cap-btn { flex:0 0 auto; width:44px; height:44px; border-radius:12px; border:none; display:flex; align-items:center; justify-content:center; background:var(--chip); }
+  .cap-btn:active { background:var(--chip2); }
   .cap-btn .ic-square { width:18px; height:18px; border-radius:5px; background:var(--text); }
   .cap-btn .ic-mic { font-size:20px; }
+  .cap-btn#capAudio.on { background:var(--blue); }
+  .cap-btn#capAudio.on .ic-mic { filter:none; }
 
   /* sheet (folder picker / actions) */
   .sheet-bg { position:absolute; inset:0; background:rgba(0,0,0,.35); display:none; z-index:70; }
@@ -111,7 +123,7 @@
   .sheet { position:absolute; left:8px; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); background:var(--panel); border-radius:16px; overflow:hidden; }
   .sheet .sh-title { padding:14px 16px; font-size:13px; color:var(--sub); text-align:center; border-bottom:.5px solid var(--border); }
   .sheet .sh-item { padding:16px; font-size:17px; text-align:center; border-bottom:.5px solid var(--border); color:var(--blue); display:flex; align-items:center; justify-content:center; gap:8px; }
-  .sheet .sh-item:active { background:#f0f0f3; }
+  .sheet .sh-item:active { background:var(--chip); }
   .sheet .sh-cancel { margin-top:8px; background:var(--panel); border-radius:16px; padding:16px; text-align:center; font-size:17px; font-weight:600; color:var(--blue); }
 
   .toast { position:absolute; bottom:84px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.8); color:#fff; padding:10px 18px; border-radius:980px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:80; }
@@ -125,6 +137,15 @@
       <div class="title" id="title">메모</div>
     </div>
     <div class="count" id="count"></div>
+  </div>
+
+  <div class="subbar" id="subbar">
+    <div class="search-field">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 11a4 4 0 108 0 4 4 0 00-8 0z" stroke="currentColor" stroke-width="2"/><path d="M14 14l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="searchInput" type="text" placeholder="메모 검색" inputmode="search">
+      <button id="searchClear" style="display:none;">✕</button>
+    </div>
+    <button class="sort-btn" id="sortBtn">정렬 ▾</button>
   </div>
 
   <div class="main">
@@ -158,8 +179,8 @@
       <video id="preview" playsinline autoplay muted></video>
     </div>
     <div class="cap-dock" id="capDock">
-      <button class="big" id="bigPhoto"><span class="ic-square"></span></button>
-      <button class="big" id="bigRec"><span class="ic-circle"></span></button>
+      <button class="big" id="bigPhoto"><span class="ic-tri"></span></button>
+      <button class="big" id="bigRec"><span class="ic-sq"></span></button>
     </div>
 
     <!-- VIEWER -->
@@ -182,6 +203,7 @@
     <button class="tb-btn" id="btnNewFolder" style="display:none;">+ 새 폴더</button>
     <button class="tb-btn" id="btnSave" style="display:none;"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>저장</button>
     <div class="tb-spacer"></div>
+    <button class="tb-btn" id="btnDark" aria-label="다크모드">🌙</button>
     <button class="tb-btn" id="btnShrink">⊟</button>
     <button class="cap-btn" id="capPhoto"><span class="ic-square"></span></button>
     <button class="cap-btn" id="capAudio"><span class="ic-mic">🎙️</span></button>
@@ -213,7 +235,9 @@ const toast=$('toast'); let toastTimer;
 function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2000);}
 
 let folders=[], notes=[], currentFolderId=null, current=null, view='notes';
-const LAST_KEY='lastFolderId';
+const LAST_KEY='lastFolderId', SORT_KEY='sortMode', DARK_KEY='darkMode';
+let sortMode=localStorage.getItem(SORT_KEY)||'updated_desc';
+let searchQuery='';
 
 /* ===== bootstrap ===== */
 async function init(){
@@ -266,16 +290,32 @@ function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folder
 function showNotes(){
   view='notes'; closeEditor(true);
   folderListEl.style.display='none'; listEl.style.display='block';
+  $('subbar').classList.remove('hidden');
   $('title').textContent=currentFolder().name;
   $('btnNew').style.display='flex'; $('btnNewFolder').style.display='none';
   localStorage.setItem(LAST_KEY,currentFolderId);
   renderNotes();
 }
+function sortNotes(arr){
+  const a=arr.slice();
+  switch(sortMode){
+    case 'updated_asc': a.sort((x,y)=>x.updated-y.updated); break;
+    case 'created_desc': a.sort((x,y)=>(y.created||0)-(x.created||0)); break;
+    case 'created_asc': a.sort((x,y)=>(x.created||0)-(y.created||0)); break;
+    case 'title_asc': a.sort((x,y)=>(x.title||'').localeCompare(y.title||'','ko')); break;
+    case 'title_desc': a.sort((x,y)=>(y.title||'').localeCompare(x.title||'','ko')); break;
+    default: a.sort((x,y)=>y.updated-x.updated); // updated_desc
+  }
+  return a;
+}
 function renderNotes(){
-  const fnotes=notes.filter(n=>n.folderId===currentFolderId).sort((a,b)=>b.updated-a.updated);
+  let fnotes=notes.filter(n=>n.folderId===currentFolderId);
+  if(searchQuery){ const q=searchQuery.toLowerCase(); fnotes=fnotes.filter(n=>((n.title||'')+' '+(n.text||'')).toLowerCase().includes(q)); }
+  fnotes=sortNotes(fnotes);
   $('count').textContent=fnotes.length?fnotes.length+'개':'';
   listEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());
   emptyEl.style.display=fnotes.length?'none':'block';
+  emptyEl.innerHTML = searchQuery ? '검색 결과가 없습니다.' : '이 폴더에 메모가 없습니다.<br>아래 ‘새 메모’로 시작하세요.';
   openRows=[];
   for(const n of fnotes){
     const wrap=document.createElement('div'); wrap.className='swipe-wrap';
@@ -302,6 +342,7 @@ function renderNotes(){
 function showFolders(){
   view='folders'; closeEditor(true); closeCamera();
   listEl.style.display='none'; folderListEl.style.display='block'; editor.classList.remove('open');
+  $('subbar').classList.add('hidden');
   $('title').textContent='폴더';
   $('count').textContent=folders.length+'개';
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='flex'; $('btnSave').style.display='none';
@@ -504,9 +545,37 @@ $('capAudio').addEventListener('click',()=>{ if(audioRec&&audioRec.state==='reco
 
 $('btnShrink').addEventListener('click',()=>{ document.body.classList.toggle('shrink'); $('btnShrink').classList.toggle('on',document.body.classList.contains('shrink')); });
 
+/* ===== Dark mode ===== */
+function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; localStorage.setItem(DARK_KEY,on?'1':'0'); }
+$('btnDark').addEventListener('click',()=>applyDark(!document.body.classList.contains('dark')));
+
+/* ===== Search ===== */
+$('searchInput').addEventListener('input',e=>{
+  searchQuery=e.target.value.trim();
+  $('searchClear').style.display=searchQuery?'block':'none';
+  if(view==='notes')renderNotes();
+});
+$('searchClear').addEventListener('click',()=>{ $('searchInput').value=''; searchQuery=''; $('searchClear').style.display='none'; renderNotes(); });
+
+/* ===== Sort ===== */
+const SORT_LABELS={updated_desc:'수정 최신순',updated_asc:'수정 오래된순',created_desc:'생성 최신순',created_asc:'생성 오래된순',title_asc:'제목 가나다순',title_desc:'제목 역순'};
+function updateSortLabel(){ $('sortBtn').textContent='정렬: '+SORT_LABELS[sortMode].split(' ')[0]+' ▾'; }
+$('sortBtn').addEventListener('click',()=>{
+  let html='<div class="sheet"><div class="sh-title">정렬 방식</div>';
+  Object.keys(SORT_LABELS).forEach(k=>{ html+='<div class="sh-item" data-sort="'+k+'">'+SORT_LABELS[k]+(k===sortMode?' ✓':'')+'</div>'; });
+  html+='</div><div class="sh-cancel" id="shCancel2">취소</div>';
+  sheetHost.innerHTML=html; sheetBg.classList.add('open');
+  sheetHost.querySelectorAll('.sh-item[data-sort]').forEach(el=>el.addEventListener('click',()=>{
+    sortMode=el.dataset.sort; localStorage.setItem(SORT_KEY,sortMode); updateSortLabel(); closeSheet(); renderNotes();
+  }));
+  $('shCancel2').addEventListener('click',closeSheet);
+});
+
 /* close swipe rows when tapping elsewhere */
 listEl.addEventListener('scroll',closeAllRows); folderListEl.addEventListener('scroll',closeAllRows);
 
+/* restore prefs */
+applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
 init();
 </script>
 </body>
