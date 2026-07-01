@@ -902,13 +902,23 @@ function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))ret
 function toggleRec(){
   if(!stream)return;
   if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
+  if(!video.videoWidth){ showToast('카메라 준비 중… 잠시 후 다시 시도'); return; }
   recChunks=[]; let poster=null;
-  if(video.videoWidth){ const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7); }
-  const mime=pickMime(['video/mp4','video/webm;codecs=h264','video/webm']);
-  mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-  mediaRecorder.ondataavailable=e=>{ if(e.data.size)recChunks.push(e.data); };
-  mediaRecorder.onstop=()=>{ stopRecUI(); attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType}),'video',poster); };
-  mediaRecorder.start(); startRecUI();
+  const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7);
+  // iOS Safari's MediaRecorder often reports mp4 as supported but produces
+  // black/empty video. Prefer webm (h264/vp8) first; fall back to mp4 last.
+  const mime=pickMime(['video/webm;codecs=h264','video/webm;codecs=vp8','video/webm','video/mp4']);
+  try{
+    mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+  }catch(e){ mediaRecorder=new MediaRecorder(stream); }
+  mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size)recChunks.push(e.data); };
+  mediaRecorder.onstop=()=>{
+    stopRecUI();
+    if(!recChunks.length){ showToast('녹화 데이터가 비었습니다. 다시 시도해 주세요'); return; }
+    attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType||mime||'video/webm'}),'video',poster);
+  };
+  // timeslice: emit chunks every 1s so data is never lost on short/edge cases
+  mediaRecorder.start(1000); startRecUI();
 }
 /* ===== Screen Wake Lock: keep screen on during capture so auto-sleep
    doesn't interrupt recording. (Manual lock / app backgrounding still
