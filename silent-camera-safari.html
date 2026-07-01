@@ -900,46 +900,52 @@ async function openCamera(){
 }
 
 /* ===== Rear lens detection (ultra-wide / wide / tele) ===== */
-let rearLenses=[]; // [{deviceId,label,guess}]
+let rearLenses=[]; // [{deviceId,label,zoomLabel}]
+function classifyLens(label){
+  const L=(label||'').toLowerCase();
+  if(/ultra|0\.5|초광각|超広角|ultrawide|ultra wide|ultra-wide/.test(L)) return '.5×';
+  if(/tele|망원|望遠|telephoto/.test(L)) return '2×';
+  if(/wide|광각|back camera|후면/.test(L)) return '1×';
+  return null; // unknown
+}
 async function detectLenses(){
   rearLenses=[];
   try{
-    const devs=await navigator.mediaDevices.enumerateDevices();
-    const cams=devs.filter(d=>d.kind==='videoinput');
-    // rear cameras: label often contains 'back'/'후면'/'rear'
-    const rear=cams.filter(d=>/back|rear|후면|environment/i.test(d.label));
-    const list=(rear.length?rear:cams);
-    list.forEach(d=>{
-      const L=d.label.toLowerCase();
-      let guess='1'; // wide default
-      if(/ultra|0\.5|초광각|wide angle|超広角/.test(L)) guess='0.5';
-      else if(/tele|망원|zoom|2x|3x|5x/.test(L)) guess='2';
-      rearLenses.push({deviceId:d.deviceId,label:d.label,guess});
+    // query twice: labels are only populated after permission is granted
+    let devs=await navigator.mediaDevices.enumerateDevices();
+    let cams=devs.filter(d=>d.kind==='videoinput');
+    const anyLabel=cams.some(d=>d.label);
+    if(!anyLabel){ await new Promise(r=>setTimeout(r,400)); devs=await navigator.mediaDevices.enumerateDevices(); cams=devs.filter(d=>d.kind==='videoinput'); }
+    // rear cameras only (front usually labeled front/전면/user/face)
+    let rear=cams.filter(d=>!/front|전면|user|face|facetime|셀피|selfie/i.test(d.label));
+    if(!rear.length) rear=cams;
+    // classify; if labels are useless, assign by position (typical order: wide, ultra, tele)
+    const positional=['1×','.5×','2×'];
+    rear.forEach((d,i)=>{
+      let zl=classifyLens(d.label);
+      if(!zl) zl=positional[i]||('렌즈'+(i+1));
+      rearLenses.push({deviceId:d.deviceId, label:d.label, zoomLabel:zl});
     });
+    // dedupe by zoomLabel, keep first
+    const seen=new Set(); rearLenses=rearLenses.filter(l=>{ if(seen.has(l.zoomLabel))return false; seen.add(l.zoomLabel); return true; });
+    // sort so .5× < 1× < 2× visually
+    const ord={'.5×':0,'1×':1,'2×':2};
+    rearLenses.sort((a,b)=>(ord[a.zoomLabel]??9)-(ord[b.zoomLabel]??9));
   }catch(e){}
   buildZoomMenu();
 }
 function buildZoomMenu(){
   const menu=$('zoomMenu'); menu.innerHTML='';
-  // If multiple distinct rear lenses exist, offer lens switches; always include digital zoom steps.
   const hasMultiLens = rearLenses.length>1 && facing==='environment';
   const items=[];
   if(hasMultiLens){
-    // map guesses to buttons, dedupe
-    const seen=new Set();
-    rearLenses.forEach(l=>{
-      if(seen.has(l.guess))return; seen.add(l.guess);
-      const label = l.guess==='0.5'?'.5×':l.guess==='2'?'2×':'1×';
-      items.push({label, lens:l});
-    });
-    // ensure a 1x exists
-    if(!items.some(i=>i.label==='1×')) items.unshift({label:'1×', lens:rearLenses[0]});
+    rearLenses.forEach(l=>items.push({label:l.zoomLabel, lens:l}));
   } else {
     [['1×',1],['1.5×',1.5],['2×',2],['3×',3],['5×',5]].forEach(([label,z])=>items.push({label,z}));
   }
   items.forEach(it=>{
     const b=document.createElement('button');
-    b.textContent=it.label;
+    b.textContent=it.label; b.dataset.label=it.label;
     b.addEventListener('click',async()=>{
       if(it.lens){
         currentDeviceId=it.lens.deviceId; zoomLevel=1;
@@ -950,7 +956,6 @@ function buildZoomMenu(){
       }
       refreshZoomMenu(); menu.classList.remove('open');
     });
-    b.dataset.label=it.label;
     menu.appendChild(b);
   });
 }
