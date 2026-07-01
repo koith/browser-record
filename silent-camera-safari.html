@@ -822,10 +822,19 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
+function setPlaybackAudioSession(){
+  // After using the mic, iOS keeps a play-and-record audio session that ignores
+  // the silent switch. Force a playback-only session so the ringer/silent switch
+  // and volume are honored again during viewer playback.
+  try{ if(navigator.audioSession){ navigator.audioSession.type='playback'; } }catch(e){}
+  try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('playback'); } }catch(e){}
+}
 function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
   const m=current.media[viewerIndex]; const url=mediaURL(m);
   vwMedia.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline></video>':m.kind==='audio'?'<audio src="'+url+'" controls></audio>':'<img src="'+url+'">';
+  const el=vwMedia.querySelector('video,audio');
+  if(el){ el.addEventListener('play',setPlaybackAudioSession); }
   const total=current.media.length;
   $('vwCounter').textContent=(viewerIndex+1)+' / '+total;
   $('vwPrev').disabled=viewerIndex<=0;
@@ -833,6 +842,7 @@ function renderViewer(){
 }
 function openViewer(i){
   if(!current||!current.media||!current.media[i])return;
+  setPlaybackAudioSession();
   viewerIndex=i; renderViewer(); viewer.classList.add('open');
 }
 function closeViewer(){ viewer.classList.remove('open'); vwMedia.innerHTML=''; viewerIndex=-1; }
@@ -981,6 +991,7 @@ function closeCamera(){
   try{ video.srcObject=null; }catch(e){}
   video.style.transform=''; $('zoomMenu').classList.remove('open');
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
+  if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
 $('camClose').addEventListener('click',closeCamera);
 $('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; currentDeviceId=null; zoomLevel=1; currentSel='1×'; try{await startStream(true);}catch(e){ } await detectLenses(); setTimeout(applyZoom,300); $('zoomBtn').textContent='1×'; });
