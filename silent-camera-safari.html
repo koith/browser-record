@@ -932,6 +932,9 @@ async function detectLenses(){
     const ord={'.5×':0,'1×':1,'2×':2};
     rearLenses.sort((a,b)=>(ord[a.zoomLabel]??9)-(ord[b.zoomLabel]??9));
   }catch(e){}
+  // default selection: first rear lens (usually 1× wide) in multi-lens mode
+  if(rearLenses.length>1 && facing==='environment'){ currentSel=rearLenses[0].zoomLabel; $('zoomBtn').textContent=currentSel; }
+  else { currentSel='1×'; }
   buildZoomMenu();
 }
 function buildZoomMenu(){
@@ -986,10 +989,13 @@ $('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'
 let zoomLevel=1, zoomHardware=false, currentSel='1×';
 function applyZoom(){
   if(!stream){ return; }
+  // If a physical lens is selected (multi-lens mode), do NOT apply digital zoom
+  // or overwrite the button label — the lens itself handles the field of view.
+  const lensMode = rearLenses.length>1 && facing==='environment';
+  if(lensMode){ video.style.transform=''; return; }
   const track=stream.getVideoTracks()[0];
   const caps=track.getCapabilities?track.getCapabilities():{};
   if(caps&&caps.zoom&&typeof caps.zoom.max==='number'){
-    // hardware zoom available (rare on iOS Safari)
     const z=Math.max(caps.zoom.min||1,Math.min(caps.zoom.max,zoomLevel));
     track.applyConstraints({advanced:[{zoom:z}]}).then(()=>{ zoomHardware=true; video.style.transform=''; }).catch(()=>{ cssZoom(); });
   } else {
