@@ -948,11 +948,24 @@ function buildZoomMenu(){
     b.textContent=it.label; b.dataset.label=it.label;
     b.addEventListener('click',async()=>{
       if(it.lens){
+        const prevId=currentDeviceId;
         currentDeviceId=it.lens.deviceId; zoomLevel=1;
-        try{ await startStream(true); }catch(e){ showToast('렌즈 전환 실패'); }
-        setTimeout(()=>{ applyZoom(); $('zoomBtn').textContent=it.label; },250);
+        try{
+          await startStream(true);
+          // verify which device actually got used
+          const used=stream.getVideoTracks()[0].getSettings().deviceId;
+          if(used && used!==it.lens.deviceId){
+            showToast('이 기기는 렌즈를 개별 선택할 수 없습니다');
+          }
+          currentSel=it.label;
+        }catch(e){
+          currentDeviceId=prevId;
+          showToast('렌즈 전환 실패: '+(e.name||e.message));
+          try{ await startStream(true); }catch(_){}
+        }
+        setTimeout(()=>{ applyZoom(); $('zoomBtn').textContent=it.label; refreshZoomMenu(); },250);
       } else {
-        zoomLevel=it.z; applyZoom();
+        zoomLevel=it.z; currentSel=it.label; applyZoom();
       }
       refreshZoomMenu(); menu.classList.remove('open');
     });
@@ -967,10 +980,10 @@ function closeCamera(){
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
 }
 $('camClose').addEventListener('click',closeCamera);
-$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; currentDeviceId=null; zoomLevel=1; try{await startStream(true);}catch(e){ } await detectLenses(); setTimeout(applyZoom,300); $('zoomBtn').textContent='1×'; });
+$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; currentDeviceId=null; zoomLevel=1; currentSel='1×'; try{await startStream(true);}catch(e){ } await detectLenses(); setTimeout(applyZoom,300); $('zoomBtn').textContent='1×'; });
 
 /* ===== Camera zoom (hardware if supported, else CSS crop) ===== */
-let zoomLevel=1, zoomHardware=false;
+let zoomLevel=1, zoomHardware=false, currentSel='1×';
 function applyZoom(){
   if(!stream){ return; }
   const track=stream.getVideoTracks()[0];
@@ -987,8 +1000,7 @@ function applyZoom(){
 function cssZoom(){ zoomHardware=false; video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; }
 $('zoomBtn').addEventListener('click',()=>{ const m=$('zoomMenu'); m.classList.toggle('open'); refreshZoomMenu(); });
 function refreshZoomMenu(){
-  const cur=(Number.isInteger(zoomLevel)?zoomLevel:zoomLevel.toFixed(1))+'×';
-  $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.label===cur));
+  $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.label===currentSel));
 }
 
 /* drag camera */
