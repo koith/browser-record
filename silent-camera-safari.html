@@ -895,7 +895,7 @@ async function attachMedia(blob,kind,poster){
   if(!current)openEditor(null);
   current.media=current.media||[]; const item={kind,blob}; if(poster)item.poster=poster; current.media.push(item); current.updated=Date.now();
   await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
-  showToast(kind==='video'?'영상 저장됨':kind==='audio'?'음성 저장됨':'사진 저장됨');
+  if(kind==='audio') showToast('음성 저장됨');
 }
 function takePhoto(){ if(!stream||!video.videoWidth)return; const s=stream.getVideoTracks()[0].getSettings(); const c=document.createElement('canvas'); c.width=s.width||video.videoWidth; c.height=s.height||video.videoHeight; c.getContext('2d').drawImage(video,0,0,c.width,c.height); c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92); }
 function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
