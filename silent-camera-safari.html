@@ -825,7 +825,7 @@ let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
 function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
   const m=current.media[viewerIndex]; const url=mediaURL(m);
-  vwMedia.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline autoplay></video>':m.kind==='audio'?'<audio src="'+url+'" controls autoplay></audio>':'<img src="'+url+'">';
+  vwMedia.innerHTML=m.kind==='video'?'<video src="'+url+'" controls playsinline></video>':m.kind==='audio'?'<audio src="'+url+'" controls></audio>':'<img src="'+url+'">';
   const total=current.media.length;
   $('vwCounter').textContent=(viewerIndex+1)+' / '+total;
   $('vwPrev').disabled=viewerIndex<=0;
