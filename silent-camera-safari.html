@@ -137,6 +137,12 @@
   .cap-dock { position:absolute; right:12px; bottom:calc(72px + env(safe-area-inset-bottom)); display:none; flex-direction:row; gap:10px; z-index:31; align-items:center; }
   .cap-dock.open { display:flex; }
   .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+  .zoom-btn { width:44px; height:44px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); color:var(--text); font-size:14px; font-weight:700; touch-action:manipulation; }
+  .zoom-btn:active { transform:scale(.92); }
+  .zoom-menu { position:absolute; right:12px; bottom:calc(134px + env(safe-area-inset-bottom)); display:none; flex-direction:column; gap:6px; z-index:32; }
+  .zoom-menu.open { display:flex; }
+  .zoom-menu button { width:52px; height:40px; border-radius:12px; border:none; background:rgba(0,0,0,.7); color:#fff; font-size:14px; font-weight:600; backdrop-filter:blur(8px); touch-action:manipulation; }
+  .zoom-menu button.active { background:var(--accent); }
   .cap-dock .big:active { transform:scale(.92); }
   /* photo = triangle */
   .cap-dock .big .ic-tri { width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-bottom:21px solid var(--text); }
@@ -245,8 +251,16 @@
       <video id="preview" playsinline autoplay muted></video>
     </div>
     <div class="cap-dock" id="capDock">
+      <button class="zoom-btn" id="zoomBtn">1×</button>
       <button class="big" id="bigPhoto"><span class="ic-tri"></span></button>
       <button class="big" id="bigRec"><span class="ic-sq"></span></button>
+    </div>
+    <div class="zoom-menu" id="zoomMenu">
+      <button data-z="1">1×</button>
+      <button data-z="1.5">1.5×</button>
+      <button data-z="2">2×</button>
+      <button data-z="3">3×</button>
+      <button data-z="5">5×</button>
     </div>
 
     <!-- VIEWER -->
@@ -871,16 +885,39 @@ async function openCamera(){
   if(!current)openEditor(null);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
   cam.classList.add('open'); capDock.classList.add('open');
-  try{ await startStream(true); }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
+  try{ await startStream(true); setTimeout(applyZoom,300); }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
 }
 function closeCamera(){
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   try{ video.srcObject=null; }catch(e){}
+  video.style.transform=''; $('zoomMenu').classList.remove('open');
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
 }
 $('camClose').addEventListener('click',closeCamera);
-$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; try{await startStream(true);}catch(e){} });
+$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; try{await startStream(true);}catch(e){ } setTimeout(applyZoom,300); });
+
+/* ===== Camera zoom (hardware if supported, else CSS crop) ===== */
+let zoomLevel=1, zoomHardware=false;
+function applyZoom(){
+  if(!stream){ return; }
+  const track=stream.getVideoTracks()[0];
+  const caps=track.getCapabilities?track.getCapabilities():{};
+  if(caps&&caps.zoom&&typeof caps.zoom.max==='number'){
+    // hardware zoom available (rare on iOS Safari)
+    const z=Math.max(caps.zoom.min||1,Math.min(caps.zoom.max,zoomLevel));
+    track.applyConstraints({advanced:[{zoom:z}]}).then(()=>{ zoomHardware=true; video.style.transform=''; }).catch(()=>{ cssZoom(); });
+  } else {
+    cssZoom();
+  }
+  $('zoomBtn').textContent=(Number.isInteger(zoomLevel)?zoomLevel:zoomLevel.toFixed(1))+'×';
+}
+function cssZoom(){ zoomHardware=false; video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; }
+$('zoomBtn').addEventListener('click',()=>{ const m=$('zoomMenu'); m.classList.toggle('open'); refreshZoomMenu(); });
+function refreshZoomMenu(){ $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active',parseFloat(b.dataset.z)===zoomLevel)); }
+$('zoomMenu').querySelectorAll('button').forEach(b=>{
+  b.addEventListener('click',()=>{ zoomLevel=parseFloat(b.dataset.z); applyZoom(); refreshZoomMenu(); $('zoomMenu').classList.remove('open'); });
+});
 
 /* drag camera */
 (function(){ let dg=false,sx=0,sy=0,ox=0,oy=0;
@@ -897,7 +934,20 @@ async function attachMedia(blob,kind,poster){
   await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
   if(kind==='audio') showToast('음성 저장됨');
 }
-function takePhoto(){ if(!stream||!video.videoWidth)return; const s=stream.getVideoTracks()[0].getSettings(); const c=document.createElement('canvas'); c.width=s.width||video.videoWidth; c.height=s.height||video.videoHeight; c.getContext('2d').drawImage(video,0,0,c.width,c.height); c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92); }
+function takePhoto(){
+  if(!stream||!video.videoWidth)return;
+  const s=stream.getVideoTracks()[0].getSettings();
+  const vw=s.width||video.videoWidth, vh=s.height||video.videoHeight;
+  const c=document.createElement('canvas'); c.width=vw; c.height=vh; const ctx=c.getContext('2d');
+  if(!zoomHardware && zoomLevel>1){
+    // software zoom: crop center by zoom factor, then scale to full canvas
+    const sw=vw/zoomLevel, sh=vh/zoomLevel, sx=(vw-sw)/2, sy=(vh-sh)/2;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, vw, vh);
+  } else {
+    ctx.drawImage(video,0,0,vw,vh);
+  }
+  c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92);
+}
 function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
 function toggleRec(){
   if(!stream)return;
