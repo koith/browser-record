@@ -876,16 +876,83 @@ $('vwSave').addEventListener('click',async()=>{
 /* ===== CAMERA ===== */
 let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0;
 const video=$('preview'), bigPhoto=$('bigPhoto'), bigRec=$('bigRec'), recBadge=$('recBadge'), recTime=$('recTime');
+let currentDeviceId=null;
 async function startStream(withVideo){
   if(stream)stream.getTracks().forEach(t=>t.stop());
-  stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080}},audio:true}:{audio:true});
+  let vcon;
+  if(withVideo){
+    vcon = currentDeviceId
+      ? { deviceId:{exact:currentDeviceId}, width:{ideal:1920}, height:{ideal:1080} }
+      : { facingMode:facing, width:{ideal:1920}, height:{ideal:1080} };
+  }
+  stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:vcon,audio:true}:{audio:true});
   if(withVideo)video.srcObject=stream;
 }
 async function openCamera(){
   if(!current)openEditor(null);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
   cam.classList.add('open'); capDock.classList.add('open');
-  try{ await startStream(true); setTimeout(applyZoom,300); }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
+  try{
+    await startStream(true);
+    await detectLenses();
+    setTimeout(applyZoom,300);
+  }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
+}
+
+/* ===== Rear lens detection (ultra-wide / wide / tele) ===== */
+let rearLenses=[]; // [{deviceId,label,guess}]
+async function detectLenses(){
+  rearLenses=[];
+  try{
+    const devs=await navigator.mediaDevices.enumerateDevices();
+    const cams=devs.filter(d=>d.kind==='videoinput');
+    // rear cameras: label often contains 'back'/'후면'/'rear'
+    const rear=cams.filter(d=>/back|rear|후면|environment/i.test(d.label));
+    const list=(rear.length?rear:cams);
+    list.forEach(d=>{
+      const L=d.label.toLowerCase();
+      let guess='1'; // wide default
+      if(/ultra|0\.5|초광각|wide angle|超広角/.test(L)) guess='0.5';
+      else if(/tele|망원|zoom|2x|3x|5x/.test(L)) guess='2';
+      rearLenses.push({deviceId:d.deviceId,label:d.label,guess});
+    });
+  }catch(e){}
+  buildZoomMenu();
+}
+function buildZoomMenu(){
+  const menu=$('zoomMenu'); menu.innerHTML='';
+  // If multiple distinct rear lenses exist, offer lens switches; always include digital zoom steps.
+  const hasMultiLens = rearLenses.length>1 && facing==='environment';
+  const items=[];
+  if(hasMultiLens){
+    // map guesses to buttons, dedupe
+    const seen=new Set();
+    rearLenses.forEach(l=>{
+      if(seen.has(l.guess))return; seen.add(l.guess);
+      const label = l.guess==='0.5'?'.5×':l.guess==='2'?'2×':'1×';
+      items.push({label, lens:l});
+    });
+    // ensure a 1x exists
+    if(!items.some(i=>i.label==='1×')) items.unshift({label:'1×', lens:rearLenses[0]});
+  } else {
+    [['1×',1],['1.5×',1.5],['2×',2],['3×',3],['5×',5]].forEach(([label,z])=>items.push({label,z}));
+  }
+  items.forEach(it=>{
+    const b=document.createElement('button');
+    b.textContent=it.label;
+    b.addEventListener('click',async()=>{
+      if(it.lens){
+        currentDeviceId=it.lens.deviceId; zoomLevel=1;
+        try{ await startStream(true); }catch(e){ showToast('렌즈 전환 실패'); }
+        setTimeout(()=>{ applyZoom(); $('zoomBtn').textContent=it.label; },250);
+      } else {
+        zoomLevel=it.z; applyZoom();
+      }
+      refreshZoomMenu(); menu.classList.remove('open');
+    });
+    b.dataset.label=it.label;
+    menu.appendChild(b);
+  });
 }
 function closeCamera(){
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
@@ -895,7 +962,7 @@ function closeCamera(){
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
 }
 $('camClose').addEventListener('click',closeCamera);
-$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; try{await startStream(true);}catch(e){ } setTimeout(applyZoom,300); });
+$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; currentDeviceId=null; zoomLevel=1; try{await startStream(true);}catch(e){ } await detectLenses(); setTimeout(applyZoom,300); $('zoomBtn').textContent='1×'; });
 
 /* ===== Camera zoom (hardware if supported, else CSS crop) ===== */
 let zoomLevel=1, zoomHardware=false;
@@ -914,10 +981,10 @@ function applyZoom(){
 }
 function cssZoom(){ zoomHardware=false; video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; }
 $('zoomBtn').addEventListener('click',()=>{ const m=$('zoomMenu'); m.classList.toggle('open'); refreshZoomMenu(); });
-function refreshZoomMenu(){ $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active',parseFloat(b.dataset.z)===zoomLevel)); }
-$('zoomMenu').querySelectorAll('button').forEach(b=>{
-  b.addEventListener('click',()=>{ zoomLevel=parseFloat(b.dataset.z); applyZoom(); refreshZoomMenu(); $('zoomMenu').classList.remove('open'); });
-});
+function refreshZoomMenu(){
+  const cur=(Number.isInteger(zoomLevel)?zoomLevel:zoomLevel.toFixed(1))+'×';
+  $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.label===cur));
+}
 
 /* drag camera */
 (function(){ let dg=false,sx=0,sy=0,ox=0,oy=0;
