@@ -921,10 +921,17 @@ async function releaseWakeLock(){
   try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(e){}
 }
 // re-acquire if the page becomes visible again while still recording
+function isRecording(){ return (mediaRecorder&&mediaRecorder.state==='recording')||(typeof audioRec!=='undefined'&&audioRec&&audioRec.state==='recording'); }
 document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden){
-    const recording=(mediaRecorder&&mediaRecorder.state==='recording')||(typeof audioRec!=='undefined'&&audioRec&&audioRec.state==='recording');
-    if(recording) acquireWakeLock();
+  if(document.hidden){
+    // Going to background: if NOT actively recording, release the camera/mic
+    // so iOS drops the green/orange indicator. Active recordings are left alone.
+    if(!isRecording() && stream){
+      try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){}
+      stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
+    }
+  } else {
+    if(isRecording()) acquireWakeLock();
   }
 });
 function startRecUI(){ acquireWakeLock(); recStart=Date.now(); bigRec.classList.add('recording'); recBadge.classList.add('active'); recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);recTime.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},250); }
