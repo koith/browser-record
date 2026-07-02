@@ -887,6 +887,12 @@ $('vwSave').addEventListener('click',async()=>{
 let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0;
 const video=$('preview'), bigPhoto=$('bigPhoto'), bigRec=$('bigRec'), recBadge=$('recBadge'), recTime=$('recTime');
 let currentDeviceId=null;
+function resetAudioSessionForCapture(){
+  // Before requesting the mic again, clear any 'playback' session we set for the
+  // viewer, otherwise iOS can throw InvalidStateError on getUserMedia(audio).
+  try{ if(navigator.audioSession){ navigator.audioSession.type='auto'; } }catch(e){}
+  try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('auto'); } }catch(e){}
+}
 async function startStream(withVideo){
   if(stream)stream.getTracks().forEach(t=>t.stop());
   let vcon;
@@ -895,7 +901,21 @@ async function startStream(withVideo){
       ? { deviceId:{exact:currentDeviceId}, width:{ideal:1920}, height:{ideal:1080} }
       : { facingMode:facing, width:{ideal:1920}, height:{ideal:1080} };
   }
-  stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:vcon,audio:true}:{audio:true});
+  if(withVideo) resetAudioSessionForCapture();
+  try{
+    stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:vcon,audio:true}:{audio:true});
+  }catch(err){
+    if(withVideo){
+      // deviceId exact may fail -> fall back to facingMode; also drop audio if needed
+      try{
+        const fb = currentDeviceId ? {facingMode:facing,width:{ideal:1920},height:{ideal:1080}} : vcon;
+        currentDeviceId=null;
+        stream=await navigator.mediaDevices.getUserMedia({video:fb,audio:true});
+      }catch(err2){
+        stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing}});
+      }
+    } else { throw err; }
+  }
   if(withVideo)video.srcObject=stream;
 }
 async function openCamera(){
@@ -904,7 +924,7 @@ async function openCamera(){
   cam.classList.add('open'); capDock.classList.add('open');
   try{
     await startStream(true);
-    await detectLenses();
+    try{ await detectLenses(); }catch(le){}
     setTimeout(applyZoom,300);
   }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
 }
