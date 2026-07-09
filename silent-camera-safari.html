@@ -142,6 +142,7 @@
   .zoom-menu { position:absolute; right:12px; bottom:calc(134px + env(safe-area-inset-bottom)); display:none; flex-direction:column; gap:6px; z-index:32; }
   .zoom-menu.open { display:flex; }
   .zoom-menu button { width:52px; height:40px; border-radius:12px; border:none; background:rgba(0,0,0,.7); color:#fff; font-size:14px; font-weight:600; backdrop-filter:blur(8px); touch-action:manipulation; }
+  .zoom-menu button.flip-item { background:rgba(255,255,255,.18); font-size:20px; margin-top:4px; }
   .zoom-menu button.active { background:var(--accent); }
   .cap-dock .big:active { transform:scale(.92); }
   /* photo = triangle */
@@ -1004,6 +1005,13 @@ function buildZoomMenu(){
     });
     menu.appendChild(b);
   });
+  // front / rear camera toggle
+  const flip=document.createElement('button');
+  flip.className='flip-item';
+  flip.textContent = facing==='environment' ? '🤳' : '📷';
+  flip.title = facing==='environment' ? '셀카로 전환' : '후면으로 전환';
+  flip.addEventListener('click',async()=>{ menu.classList.remove('open'); await flipCamera(); });
+  menu.appendChild(flip);
 }
 function closeCamera(){
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
@@ -1013,8 +1021,15 @@ function closeCamera(){
   stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
   if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
+async function flipCamera(){
+  facing=facing==='environment'?'user':'environment';
+  currentDeviceId=null; zoomLevel=1; currentSel='1×';
+  try{await startStream(true);}catch(e){ }
+  try{ await detectLenses(); }catch(le){}
+  setTimeout(applyZoom,300); $('zoomBtn').textContent='1×';
+}
 $('camClose').addEventListener('click',closeCamera);
-$('camFlip').addEventListener('click',async()=>{ facing=facing==='environment'?'user':'environment'; currentDeviceId=null; zoomLevel=1; currentSel='1×'; try{await startStream(true);}catch(e){ } await detectLenses(); setTimeout(applyZoom,300); $('zoomBtn').textContent='1×'; });
+$('camFlip').addEventListener('click',flipCamera);
 
 /* ===== Camera zoom (hardware if supported, else CSS crop) ===== */
 let zoomLevel=1, zoomHardware=false, currentSel='1×';
