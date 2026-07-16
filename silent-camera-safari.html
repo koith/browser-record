@@ -75,7 +75,7 @@
   .note-card .nc-meta { font-size:12px; color:var(--sub); margin-top:8px; display:flex; gap:10px; align-items:center; }
   .note-card .nc-media { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
   .m { position:relative; width:54px; height:54px; border-radius:8px; overflow:hidden; border:.5px solid var(--border); background:#eee; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
-  .m img, .m video { width:100%; height:100%; object-fit:cover; }
+  .m img, .m video { width:100%; height:100%; object-fit:cover; opacity:.5; }
   .m.audio { background:#eef; font-size:22px; }
   .m .play-badge { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; font-size:14px; text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
   body.shrink .m { width:16px; height:16px; border-radius:3px; font-size:9px; }
@@ -110,6 +110,9 @@
   .ed-attach.empty { border-top:none; }
   .ed-attach-label { font-size:12px; font-weight:600; color:var(--sub); letter-spacing:.03em; text-transform:uppercase; margin-bottom:8px; }
   .ed-media { display:flex; flex-wrap:wrap; gap:8px; }
+  /* while camera + zoom/shutter controls are on screen (bottom-right), keep the
+     attachment thumbnails clear of that column so they don't overlap the buttons */
+  body.cam-active .ed-attach { padding-right:120px; }
   .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; touch-action:manipulation; }
   body.shrink .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
   .ed-loc { margin-top:16px; }
@@ -188,12 +191,39 @@
   .sheet .sh-item { padding:16px; font-size:17px; text-align:center; border-bottom:.5px solid var(--border); color:var(--blue); display:flex; align-items:center; justify-content:center; gap:8px; }
   .sheet .sh-item:active { background:var(--chip); }
   .sheet .sh-cancel { margin-top:8px; background:var(--panel); border-radius:16px; padding:16px; text-align:center; font-size:17px; font-weight:600; color:var(--blue); }
+  /* centered confirm modal */
+  .modal-center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:32px; }
+  .modal-center .mc-box { background:var(--panel); border-radius:18px; width:100%; max-width:300px; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.35); }
+  .modal-center .mc-msg { padding:22px 20px; text-align:center; font-size:16px; line-height:1.5; color:var(--text); border-bottom:.5px solid var(--border); }
+  .modal-center .mc-actions { display:flex; }
+  .modal-center .mc-actions button { flex:1; border:none; padding:15px; font-size:16px; font-weight:600; background:var(--panel); }
+  .modal-center .mc-cancel { color:var(--sub); border-right:.5px solid var(--border); }
+  .modal-center .mc-yes { color:var(--red); }
+  /* login screen */
+  .login { position:fixed; inset:0; background:var(--bg); z-index:200; display:none; align-items:center; justify-content:center; padding:32px; }
+  body.locked .login { display:flex; }
+  body.locked .header, body.locked .subbar, body.locked .main, body.locked .toolbar { visibility:hidden; }
+  .login-box { width:100%; max-width:300px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .login-icon { font-size:44px; }
+  .login-title { font-size:22px; font-weight:700; letter-spacing:-.02em; color:var(--text); margin-bottom:4px; }
+  .login-pw { width:100%; text-align:center; font-size:22px; letter-spacing:.3em; padding:14px; border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:12px; outline:none; }
+  .login-btn { width:100%; padding:14px; border:none; border-radius:12px; background:var(--accent); color:#fff; font-size:16px; font-weight:600; }
+  .login-err { font-size:13px; color:var(--red); min-height:16px; }
 
   .toast { position:absolute; bottom:84px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.8); color:#fff; padding:10px 18px; border-radius:980px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:80; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 </style>
 </head>
-<body>
+<body class="locked">
+  <div class="login" id="login">
+    <div class="login-box">
+      <div class="login-icon">🔒</div>
+      <div class="login-title">기록 메모</div>
+      <input class="login-pw" id="loginPw" type="password" inputmode="numeric" placeholder="비밀번호" autocomplete="off">
+      <button class="login-btn" id="loginBtn">잠금 해제</button>
+      <div class="login-err" id="loginErr"></div>
+    </div>
+  </div>
   <div class="header">
     <div class="h-left">
       <button class="folder-btn" id="folderBtn">📁 폴더</button>
@@ -665,9 +695,12 @@ $('btnNewFolder').addEventListener('click',newFolder);
 const sheetBg=$('sheetBg'), sheetHost=$('sheetHost');
 function closeSheet(){ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }
 function showConfirm(msg, onYes, yesLabel){
-  const html='<div class="sheet"><div class="sh-title">'+msg+'</div>'+
-    '<div class="sh-item" id="cfYes" style="color:var(--red);font-weight:600;">'+(yesLabel||'삭제')+'</div>'+
-    '</div><div class="sh-cancel" id="cfNo">취소</div>';
+  const html='<div class="modal-center"><div class="mc-box">'+
+    '<div class="mc-msg">'+msg+'</div>'+
+    '<div class="mc-actions">'+
+      '<button class="mc-cancel" id="cfNo">취소</button>'+
+      '<button class="mc-yes" id="cfYes">'+(yesLabel||'삭제')+'</button>'+
+    '</div></div></div>';
   sheetHost.innerHTML=html; sheetBg.classList.add('open');
   $('cfYes').addEventListener('click',()=>{ closeSheet(); onYes&&onYes(); });
   $('cfNo').addEventListener('click',closeSheet);
@@ -922,7 +955,7 @@ async function startStream(withVideo){
 async function openCamera(){
   if(!current)openEditor(null);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
-  cam.classList.add('open'); capDock.classList.add('open');
+  cam.classList.add('open'); capDock.classList.add('open'); document.body.classList.add('cam-active');
   try{
     await startStream(true);
     try{ await detectLenses(); }catch(le){}
@@ -1018,7 +1051,7 @@ function closeCamera(){
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   try{ video.srcObject=null; }catch(e){}
   video.style.transform=''; $('zoomMenu').classList.remove('open');
-  stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
+  stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active');
   if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
 async function flipCamera(){
@@ -1124,7 +1157,7 @@ document.addEventListener('visibilitychange',()=>{
     // so iOS drops the green/orange indicator. Active recordings are left alone.
     if(!isRecording() && stream){
       try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){}
-      stream=null; cam.classList.remove('open'); capDock.classList.remove('open');
+      stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active');
     }
   } else {
     if(isRecording()) acquireWakeLock();
@@ -1275,7 +1308,23 @@ $('importFile').addEventListener('change',async e=>{
   e.target.value='';
 });
 
-init();
+/* ===== Login gate (password only; initial 1128) ===== */
+const APP_PASSWORD='1128';
+let appStarted=false;
+function tryUnlock(){
+  const pw=$('loginPw').value;
+  if(pw===APP_PASSWORD){
+    document.body.classList.remove('locked');
+    $('loginErr').textContent='';
+    $('loginPw').value='';
+    if(!appStarted){ appStarted=true; init(); }
+  } else {
+    $('loginErr').textContent='비밀번호가 올바르지 않습니다';
+    $('loginPw').value=''; $('loginPw').focus();
+  }
+}
+$('loginBtn').addEventListener('click',tryUnlock);
+$('loginPw').addEventListener('keydown',e=>{ if(e.key==='Enter')tryUnlock(); });
 </script>
 </body>
 </html>
