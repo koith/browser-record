@@ -106,8 +106,8 @@
   .editor input.ed-title::placeholder, .editor textarea.ed-text::placeholder { color:var(--sub); opacity:.6; }
   .editor textarea.ed-text { flex:1; width:100%; min-height:120px; border:none; background:transparent; outline:none; font-size:17px; line-height:1.65; resize:none; font-family:inherit; color:var(--text); }
   /* attachments: capped to ~1/3 of editor height, horizontally scrollable */
-  .ed-attach { flex:0 0 auto; max-height:33vh; overflow-y:auto; border-top:.5px solid var(--border); margin:8px -20px 0; padding:12px 20px calc(8px + env(safe-area-inset-bottom)); }
-  .ed-attach.empty { border-top:none; }
+  .ed-attach { flex:0 0 auto; max-height:33vh; overflow-y:auto; margin:16px 0 0; padding:12px 14px calc(10px + env(safe-area-inset-bottom)); border:1px solid var(--border); border-radius:12px; background:rgba(128,128,128,.06); background:color-mix(in srgb, var(--text) 3%, transparent); }
+  .ed-attach.empty { display:none; }
   .ed-attach-label { font-size:12px; font-weight:600; color:var(--sub); letter-spacing:.03em; text-transform:uppercase; margin-bottom:8px; }
   .ed-media { display:flex; flex-wrap:wrap; gap:8px; }
   /* while camera + zoom/shutter controls are on screen (bottom-right), keep the
@@ -149,7 +149,7 @@
   #zoomSlider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
   .zoom-ticks { display:flex; flex-direction:column; align-items:center; gap:2px; color:#c8732e; font-size:10px; font-weight:600; }
   .zoom-menu .flip-item { width:46px; height:36px; border-radius:10px; border:none; background:rgba(255,255,255,.18); font-size:18px; touch-action:manipulation; }
-  .opt-badge { color:#34c759; font-size:9px; font-weight:700; letter-spacing:.05em; min-height:11px; }
+  .opt-badge { color:rgba(255,255,255,.5); font-size:9px; font-weight:600; letter-spacing:.05em; min-height:11px; }
   .cap-dock .big:active { transform:scale(.92); }
   /* photo = triangle */
   .cap-dock .big .ic-tri { width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-bottom:21px solid var(--text); }
