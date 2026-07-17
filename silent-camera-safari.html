@@ -142,11 +142,14 @@
   .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
   .zoom-btn { width:44px; height:44px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); color:var(--text); font-size:14px; font-weight:700; touch-action:manipulation; }
   .zoom-btn:active { transform:scale(.92); }
-  .zoom-menu { position:absolute; right:12px; bottom:calc(134px + env(safe-area-inset-bottom)); display:none; flex-direction:column; gap:6px; z-index:32; }
+  .zoom-menu { position:absolute; right:12px; bottom:calc(134px + env(safe-area-inset-bottom)); display:none; flex-direction:column; align-items:center; gap:8px; z-index:32; background:rgba(0,0,0,.72); backdrop-filter:blur(10px); padding:14px 12px; border-radius:16px; width:70px; }
   .zoom-menu.open { display:flex; }
-  .zoom-menu button { width:52px; height:40px; border-radius:12px; border:none; background:rgba(0,0,0,.7); color:#fff; font-size:14px; font-weight:600; backdrop-filter:blur(8px); touch-action:manipulation; }
-  .zoom-menu button.flip-item { background:rgba(255,255,255,.18); font-size:20px; margin-top:4px; }
-  .zoom-menu button.active { background:var(--accent); }
+  .zoom-readout { color:#fff; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+  #zoomSlider { -webkit-appearance:none; appearance:none; width:150px; height:4px; border-radius:2px; background:rgba(255,255,255,.35); outline:none; transform:rotate(-90deg); margin:70px 0; touch-action:none; }
+  #zoomSlider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+  .zoom-ticks { display:flex; flex-direction:column; align-items:center; gap:2px; color:#c8732e; font-size:10px; font-weight:600; }
+  .zoom-menu .flip-item { width:46px; height:36px; border-radius:10px; border:none; background:rgba(255,255,255,.18); font-size:18px; touch-action:manipulation; }
+  .opt-badge { color:#34c759; font-size:9px; font-weight:700; letter-spacing:.05em; min-height:11px; }
   .cap-dock .big:active { transform:scale(.92); }
   /* photo = triangle */
   .cap-dock .big .ic-tri { width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-bottom:21px solid var(--text); }
@@ -294,11 +297,10 @@
       <button class="big" id="bigRec"><span class="ic-sq"></span></button>
     </div>
     <div class="zoom-menu" id="zoomMenu">
-      <button data-z="1">1×</button>
-      <button data-z="1.5">1.5×</button>
-      <button data-z="2">2×</button>
-      <button data-z="3">3×</button>
-      <button data-z="5">5×</button>
+      <div class="zoom-readout" id="zoomReadout">1.0×</div>
+      <div class="opt-badge" id="zoomBadge"></div>
+      <input type="range" id="zoomSlider" min="1" max="4" step="0.1" value="1">
+      <button class="flip-item" id="zoomFlip">🤳</button>
     </div>
 
     <!-- VIEWER -->
@@ -1003,55 +1005,65 @@ async function detectLenses(){
     const ord={'.5×':0,'1×':1,'2×':2};
     rearLenses.sort((a,b)=>(ord[a.zoomLabel]??9)-(ord[b.zoomLabel]??9));
   }catch(e){}
-  // default selection: first rear lens (usually 1× wide) in multi-lens mode
-  if(rearLenses.length>1 && facing==='environment'){ currentSel=rearLenses[0].zoomLabel; $('zoomBtn').textContent=currentSel; }
-  else { currentSel='1×'; }
   buildZoomMenu();
 }
 function buildZoomMenu(){
-  const menu=$('zoomMenu'); menu.innerHTML='';
-  const hasMultiLens = rearLenses.length>1 && facing==='environment';
-  const items=[];
-  if(hasMultiLens){
-    rearLenses.forEach(l=>items.push({label:l.zoomLabel, lens:l}));
-  } else {
-    [['1×',1],['1.5×',1.5],['2×',2],['3×',3],['5×',5]].forEach(([label,z])=>items.push({label,z}));
-  }
-  items.forEach(it=>{
-    const b=document.createElement('button');
-    b.textContent=it.label; b.dataset.label=it.label;
-    b.addEventListener('click',async()=>{
-      if(it.lens){
-        const prevId=currentDeviceId;
-        currentDeviceId=it.lens.deviceId; zoomLevel=1;
-        try{
-          await startStream(true);
-          // verify which device actually got used
-          const used=stream.getVideoTracks()[0].getSettings().deviceId;
-          if(used && used!==it.lens.deviceId){
-            showToast('이 기기는 렌즈를 개별 선택할 수 없습니다');
-          }
-          currentSel=it.label;
-        }catch(e){
-          currentDeviceId=prevId;
-          showToast('렌즈 전환 실패: '+(e.name||e.message));
-          try{ await startStream(true); }catch(_){}
-        }
-        setTimeout(()=>{ applyZoom(); $('zoomBtn').textContent=it.label; refreshZoomMenu(); },250);
-      } else {
-        zoomLevel=it.z; currentSel=it.label; applyZoom();
-      }
-      refreshZoomMenu(); menu.classList.remove('open');
-    });
-    menu.appendChild(b);
-  });
-  // front / rear camera toggle
-  const flip=document.createElement('button');
-  flip.className='flip-item';
+  // configure slider range based on available rear lenses
+  const slider=$('zoomSlider'), flip=$('zoomFlip');
+  const teleLens = rearLenses.find(l=>l.zoomLabel==='2×');
+  hasTele = !!teleLens && facing==='environment';
+  wideLens = rearLenses.find(l=>l.zoomLabel==='1×') || rearLenses[0] || null;
+  // range: 1.0 – 4.0 if tele exists (2.0 = optical tele point); else 1.0 – 5.0 digital
+  slider.min='1';
+  slider.max = hasTele ? '4' : '5';
+  slider.step='0.1';
+  if(parseFloat(slider.value)>parseFloat(slider.max)) slider.value=slider.max;
   flip.textContent = facing==='environment' ? '🤳' : '📷';
-  flip.title = facing==='environment' ? '셀카로 전환' : '후면으로 전환';
-  flip.addEventListener('click',async()=>{ menu.classList.remove('open'); await flipCamera(); });
-  menu.appendChild(flip);
+  // apply current slider value
+  setZoom(parseFloat(slider.value));
+}
+let hasTele=false, wideLens=null, teleActive=false;
+/* Core: map a slider value to lens choice + digital multiplier.
+   - value ~1.0  -> wide lens, no digital  (optical)
+   - value ~2.0  -> tele lens, no digital   (optical, if tele exists)
+   - between/above -> nearest lens + CSS digital zoom for the remainder */
+async function setZoom(v){
+  $('zoomReadout').textContent=v.toFixed(1)+'×';
+  $('zoomBtn').textContent=(Math.round(v*10)%10===0?v.toFixed(0):v.toFixed(1))+'×';
+  const EPS=0.05;
+  if(hasTele){
+    const teleLens=rearLenses.find(l=>l.zoomLabel==='2×');
+    if(v>=2-EPS){
+      // use tele lens; digital on top for >2
+      await ensureLens(teleLens);
+      const digital=v/2;
+      applyDigital(digital);
+      $('zoomBadge').textContent = (Math.abs(v-2)<EPS)?'광학 2×':'광학2×+디지털';
+    } else {
+      // wide lens; digital for >1
+      await ensureLens(wideLens);
+      applyDigital(v);
+      $('zoomBadge').textContent = (Math.abs(v-1)<EPS)?'광학 1×':'디지털';
+    }
+  } else {
+    // single lens: everything digital except exactly 1.0
+    await ensureLens(wideLens);
+    applyDigital(v);
+    $('zoomBadge').textContent = (Math.abs(v-1)<EPS)?'광학 1×':'디지털';
+  }
+}
+async function ensureLens(lens){
+  if(!lens){ return; }
+  if(currentDeviceId===lens.deviceId) return;
+  const prev=currentDeviceId;
+  currentDeviceId=lens.deviceId;
+  try{ await startStream(true); }
+  catch(e){ currentDeviceId=prev; try{ await startStream(true); }catch(_){} }
+}
+function applyDigital(mult){
+  zoomLevel = mult<1?1:mult;
+  if(zoomLevel<=1.001){ video.style.transform=''; zoomHardware=false; }
+  else { video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; zoomHardware=false; }
 }
 function closeCamera(){
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
@@ -1063,37 +1075,28 @@ function closeCamera(){
 }
 async function flipCamera(){
   facing=facing==='environment'?'user':'environment';
-  currentDeviceId=null; zoomLevel=1; currentSel='1×';
+  currentDeviceId=null; zoomLevel=1;
+  $('zoomSlider').value='1';
   try{await startStream(true);}catch(e){ }
   try{ await detectLenses(); }catch(le){}
-  setTimeout(applyZoom,300); $('zoomBtn').textContent='1×';
+  $('zoomBtn').textContent='1×';
 }
 $('camClose').addEventListener('click',closeCamera);
 $('camFlip').addEventListener('click',flipCamera);
 
-/* ===== Camera zoom (hardware if supported, else CSS crop) ===== */
+/* ===== Zoom slider wiring ===== */
 let zoomLevel=1, zoomHardware=false, currentSel='1×';
-function applyZoom(){
-  if(!stream){ return; }
-  // If a physical lens is selected (multi-lens mode), do NOT apply digital zoom
-  // or overwrite the button label — the lens itself handles the field of view.
-  const lensMode = rearLenses.length>1 && facing==='environment';
-  if(lensMode){ video.style.transform=''; return; }
-  const track=stream.getVideoTracks()[0];
-  const caps=track.getCapabilities?track.getCapabilities():{};
-  if(caps&&caps.zoom&&typeof caps.zoom.max==='number'){
-    const z=Math.max(caps.zoom.min||1,Math.min(caps.zoom.max,zoomLevel));
-    track.applyConstraints({advanced:[{zoom:z}]}).then(()=>{ zoomHardware=true; video.style.transform=''; }).catch(()=>{ cssZoom(); });
-  } else {
-    cssZoom();
-  }
-  $('zoomBtn').textContent=(Number.isInteger(zoomLevel)?zoomLevel:zoomLevel.toFixed(1))+'×';
-}
-function cssZoom(){ zoomHardware=false; video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; }
-$('zoomBtn').addEventListener('click',()=>{ const m=$('zoomMenu'); m.classList.toggle('open'); refreshZoomMenu(); });
-function refreshZoomMenu(){
-  $('zoomMenu').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.label===currentSel));
-}
+let zoomApplyPending=false;
+$('zoomSlider').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value);
+  $('zoomReadout').textContent=v.toFixed(1)+'×';
+  // debounce lens switching while dragging; apply digital live
+  if(!zoomApplyPending){ zoomApplyPending=true; requestAnimationFrame(()=>{ zoomApplyPending=false; setZoom(parseFloat($('zoomSlider').value)); }); }
+});
+$('zoomBtn').addEventListener('click',()=>{ $('zoomMenu').classList.toggle('open'); });
+$('zoomFlip').addEventListener('click',async()=>{ $('zoomMenu').classList.remove('open'); await flipCamera(); });
+function applyZoom(){ /* kept for calls elsewhere: re-apply current slider */ setZoom(parseFloat($('zoomSlider').value||'1')); }
+function refreshZoomMenu(){ /* slider UI: nothing to toggle */ }
 
 /* drag camera */
 (function(){ let dg=false,sx=0,sy=0,ox=0,oy=0;
