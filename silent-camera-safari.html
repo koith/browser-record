@@ -901,7 +901,7 @@ function renderViewer(){
   if(m.kind==='video'){
     vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
     $('vwCtrl').style.display='flex';
-    setupVideoControls();
+    setupVideoControls(m.duration||0);
   } else {
     vwMedia.innerHTML=m.kind==='audio'?'<audio src="'+url+'" controls></audio>':'<img src="'+url+'">';
     $('vwCtrl').style.display='none';
@@ -913,37 +913,38 @@ function renderViewer(){
   $('vwPrev').disabled=viewerIndex<=0;
   $('vwNext').disabled=viewerIndex>=total-1;
 }
-function setupVideoControls(){
+function setupVideoControls(storedDur){
   const v=$('vwVideo'), play=$('vwPlay'), seek=$('vwSeek'), cur=$('vwCur'), dur=$('vwDur');
-  let seeking=false, realDur=0, fixing=false;
+  let seeking=false, realDur=0, fixing=false, raf=0;
   function setDur(d){
-    if(isFinite(d)&&d>0){ realDur=d; dur.textContent=fmtTime(d); seek.max=d; }
+    if(isFinite(d)&&d>0){ realDur=d; dur.textContent=fmtTime(d); seek.max=d; seek.step=Math.max(0.05, d/1000); }
   }
-  // iOS/Chrome webm recordings often report duration = Infinity/NaN.
-  // Trick: seek far past the end; the browser then resolves the true duration.
+  // 1) Prefer the duration we measured at record time (most reliable for webm)
+  if(storedDur&&isFinite(storedDur)&&storedDur>0){ setDur(storedDur); }
+  // 2) Also try the file's own metadata; if Infinity, use the seek trick
   function resolveDuration(){
     if(isFinite(v.duration)&&v.duration>0){ setDur(v.duration); return; }
+    if(realDur>0) return; // already have stored duration, no need for trick
     fixing=true;
-    const onSeeked=()=>{
-      v.removeEventListener('seeked',onSeeked);
-      setDur(v.duration);
-      try{ v.currentTime=0; }catch(e){}
-      fixing=false;
-    };
+    const onSeeked=()=>{ v.removeEventListener('seeked',onSeeked); setDur(v.duration); try{ v.currentTime=0; }catch(e){} fixing=false; };
     v.addEventListener('seeked',onSeeked);
     try{ v.currentTime=1e9; }catch(e){ fixing=false; }
   }
-  v.addEventListener('loadedmetadata',()=>{ resolveDuration(); });
-  v.addEventListener('durationchange',()=>{ if(!fixing) setDur(v.duration); });
-  v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ seek.value=v.currentTime; cur.textContent=fmtTime(v.currentTime); } });
-  v.addEventListener('play',()=>{ play.textContent='❚❚'; setPlaybackAudioSession(); });
-  v.addEventListener('pause',()=>{ play.textContent='▶'; });
-  v.addEventListener('ended',()=>{ play.textContent='▶'; });
+  v.addEventListener('loadedmetadata',resolveDuration);
+  v.addEventListener('durationchange',()=>{ if(!fixing && isFinite(v.duration)&&v.duration>0) setDur(v.duration); });
+  function paint(){
+    if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); }
+    raf=requestAnimationFrame(paint);
+  }
+  v.addEventListener('play',()=>{ play.textContent='❚❚'; setPlaybackAudioSession(); cancelAnimationFrame(raf); paint(); });
+  v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
+  v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
+  v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } });
   play.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
   v.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
   const startSeek=()=>{ if(realDur>0)seeking=true; };
   const doSeek=()=>{ if(seeking)cur.textContent=fmtTime(parseFloat(seek.value)); };
-  const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t))v.currentTime=t; seeking=false; };
+  const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t)){ try{ v.currentTime=t; }catch(e){} } seeking=false; };
   seek.addEventListener('input',doSeek);
   seek.addEventListener('pointerdown',startSeek);
   seek.addEventListener('touchstart',startSeek,{passive:true});
@@ -1186,9 +1187,9 @@ function refreshZoomMenu(){ /* slider UI: nothing to toggle */ }
   cam.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
 })();
 
-async function attachMedia(blob,kind,poster){
+async function attachMedia(blob,kind,poster,duration){
   if(!current)openEditor(null);
-  current.media=current.media||[]; const item={kind,blob}; if(poster)item.poster=poster; current.media.push(item); current.updated=Date.now();
+  current.media=current.media||[]; const item={kind,blob}; if(poster)item.poster=poster; if(duration&&isFinite(duration)&&duration>0)item.duration=duration; current.media.push(item); current.updated=Date.now();
   await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
   if(kind==='audio') showToast('음성 저장됨');
 }
@@ -1223,7 +1224,8 @@ function toggleRec(){
   mediaRecorder.onstop=()=>{
     stopRecUI();
     if(!recChunks.length){ showToast('녹화 데이터가 비었습니다. 다시 시도해 주세요'); return; }
-    attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType||mime||'video/webm'}),'video',poster);
+    const durSec=(Date.now()-recStart)/1000;
+    attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType||mime||'video/webm'}),'video',poster,durSec);
   };
   // timeslice: emit chunks every 1s so data is never lost on short/edge cases
   mediaRecorder.start(1000); startRecUI();
@@ -1272,8 +1274,9 @@ async function startAudio(){
   if(!current)openEditor(null);
   try{ const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
     audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
+    const aStart=Date.now();
     audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio'); $('capAudio').classList.remove('on'); };
+    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); };
     audioRec.start(); acquireWakeLock(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
   }catch(e){ showToast('마이크 오류: '+e.name); }
 }
