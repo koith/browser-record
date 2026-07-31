@@ -78,8 +78,8 @@
   .m img, .m video { width:100%; height:100%; object-fit:cover; opacity:.5; }
   .m.audio { background:var(--chip2); font-size:22px; }
   .m .play-badge { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#fff; font-size:14px; text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
-  body.shrink .m { width:16px; height:16px; border-radius:3px; font-size:9px; }
-  body.shrink .m .play-badge { font-size:8px; }
+  body.shrink-thumb .m { width:16px; height:16px; border-radius:3px; font-size:9px; }
+  body.shrink-thumb .m .play-badge { font-size:8px; }
 
   /* folder list */
   .folder-row { background:var(--panel); border:.5px solid var(--border); border-radius:14px; padding:16px; display:flex; align-items:center; justify-content:space-between; }
@@ -109,14 +109,14 @@
   .ed-attach { flex:0 0 auto; overflow-y:auto; margin:16px 0 0; padding:12px 14px calc(10px + env(safe-area-inset-bottom)); border:1px solid var(--border); border-radius:12px; background:rgba(128,128,128,.06); background:color-mix(in srgb, var(--text) 3%, transparent); }
   /* thumbnails scroll after ~2 rows (54px rows + 8px gap) */
   .ed-media { display:flex; flex-wrap:wrap; gap:8px; max-height:116px; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-  body.shrink .ed-media { max-height:40px; }
+  body.shrink-thumb .ed-media { max-height:40px; }
   .ed-attach.empty { display:none; }
   .ed-attach-label { font-size:12px; font-weight:600; color:var(--sub); letter-spacing:.03em; text-transform:uppercase; margin-bottom:8px; }
   /* while camera + zoom/shutter controls are on screen (bottom-right), keep the
      attachment thumbnails clear of that column so they don't overlap the buttons */
   body.cam-active .ed-attach { padding-right:120px; }
   .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; touch-action:manipulation; }
-  body.shrink .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
+  body.shrink-thumb .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
   .ed-loc { margin-top:16px; }
   .loc-card { background:var(--chip); border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .loc-card .lc-info { font-size:14px; color:var(--text); line-height:1.5; }
@@ -127,7 +127,7 @@
   .loc-card .lc-remove { border:none; background:var(--chip2); color:var(--red); font-size:13px; padding:7px 12px; border-radius:8px; white-space:nowrap; }
 
   /* Camera floating window 1/3 + 20% opacity + draggable */
-  .cam { position:absolute; right:12px; bottom:calc(150px + env(safe-area-inset-bottom)); width:88px; height:118px; background:#000; display:none; flex-direction:column; z-index:30; border-radius:14px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.35); border:1.5px solid rgba(255,255,255,.85); opacity:.2; touch-action:none; }
+  .cam { position:absolute; right:12px; bottom:calc(150px + var(--kb,0px) + env(safe-area-inset-bottom)); width:88px; height:118px; background:#000; display:none; flex-direction:column; z-index:30; border-radius:14px; overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.35); border:1.5px solid rgba(255,255,255,.85); opacity:.2; touch-action:none; }
   .cam.open { display:flex; }
   .cam video { flex:1; width:100%; height:100%; object-fit:cover; }
   .cam .cam-top { position:absolute; top:2px; left:2px; right:2px; display:flex; justify-content:space-between; z-index:2; }
@@ -136,15 +136,15 @@
   .cam .rec-badge.active { display:flex; }
   .cam .rec-dot { width:5px; height:5px; border-radius:50%; background:var(--red); animation:blink 1s steps(2,start) infinite; }
   @keyframes blink { 50% { opacity:.2; } }
-  body.shrink .cam { width:20px; height:27px; }
-  body.shrink .cam .cam-top, body.shrink .cam .rec-badge { display:none !important; }
+  body.shrink-cam .cam { width:20px; height:27px; }
+  body.shrink-cam .cam .cam-top, body.shrink-cam .cam .rec-badge { display:none !important; }
 
-  .cap-dock { position:absolute; right:12px; bottom:calc(72px + env(safe-area-inset-bottom)); display:none; flex-direction:row; gap:10px; z-index:31; align-items:center; }
+  .cap-dock { position:absolute; right:12px; bottom:calc(72px + var(--kb,0px) + env(safe-area-inset-bottom)); display:none; flex-direction:row; gap:10px; z-index:31; align-items:center; }
   .cap-dock.open { display:flex; }
   .cap-dock .big { width:54px; height:54px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
   .zoom-btn { width:44px; height:44px; border-radius:50%; border:none; background:var(--panel); box-shadow:0 4px 14px rgba(0,0,0,.25); color:var(--text); font-size:14px; font-weight:700; touch-action:manipulation; }
   .zoom-btn:active { transform:scale(.92); }
-  .zoom-menu { position:absolute; right:12px; bottom:calc(134px + env(safe-area-inset-bottom)); display:none; flex-direction:column; align-items:center; gap:8px; z-index:32; background:rgba(0,0,0,.72); backdrop-filter:blur(10px); padding:14px 12px; border-radius:16px; width:70px; }
+  .zoom-menu { position:absolute; right:12px; bottom:calc(134px + var(--kb,0px) + env(safe-area-inset-bottom)); display:none; flex-direction:column; align-items:center; gap:8px; z-index:32; background:rgba(0,0,0,.72); backdrop-filter:blur(10px); padding:14px 12px; border-radius:16px; width:70px; }
   .zoom-menu.open { display:flex; }
   .zoom-readout { color:#fff; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
   #zoomSlider { -webkit-appearance:none; appearance:none; width:150px; height:4px; border-radius:2px; background:rgba(255,255,255,.35); outline:none; transform:rotate(-90deg); margin:70px 0; touch-action:none; }
@@ -182,7 +182,7 @@
   .viewer .vw-bottom { flex:0 0 auto; display:flex; justify-content:center; gap:12px; padding:12px 16px calc(16px + env(safe-area-inset-bottom)); }
   .viewer .vw-bottom button { background:var(--blue); color:#fff; border:none; border-radius:12px; padding:13px 26px; font-size:16px; font-weight:600; }
 
-  .toolbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:.5px solid var(--border); background:var(--panel); }
+  .toolbar { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 12px calc(8px + env(safe-area-inset-bottom)); border-top:.5px solid var(--border); background:var(--panel); position:relative; bottom:var(--kb,0px); transition:bottom .15s ease; }
   .tb-btn { flex:0 0 auto; height:44px; min-width:44px; padding:0 14px; border-radius:12px; border:none; background:var(--chip); color:var(--text); font-size:15px; font-weight:500; display:flex; align-items:center; gap:6px; }
   .tb-btn:active { background:var(--chip2); }
   .tb-btn.primary { background:var(--accent); color:#fff; }
@@ -380,7 +380,8 @@
     <button class="tb-btn" id="btnSave" style="display:none;"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>저장</button>
     <div class="tb-spacer"></div>
     <button class="tb-btn" id="btnDark" aria-label="다크모드">🌙</button>
-    <button class="tb-btn" id="btnShrink">⊟</button>
+    <button class="tb-btn" id="btnShrinkThumb" aria-label="첨부 썸네일 크기" title="첨부 크기">🖼️</button>
+    <button class="tb-btn" id="btnShrinkCam" aria-label="촬영화면 크기" title="촬영화면 크기">🎬</button>
     <button class="cap-btn" id="capPhoto"><span class="ic-square"></span></button>
     <button class="cap-btn" id="capAudio"><span class="ic-mic">🎙️</span></button>
   </div>
@@ -1257,7 +1258,8 @@ async function startAudio(){
 /* capAudio handled by bindTap (defined after deps) */
 bindTap($('capAudio'), ()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
 
-$('btnShrink').addEventListener('click',()=>{ document.body.classList.toggle('shrink'); const on=document.body.classList.contains('shrink'); $('btnShrink').classList.toggle('on',on); localStorage.setItem('shrinkMode',on?'1':'0'); });
+$('btnShrinkThumb').addEventListener('click',()=>{ document.body.classList.toggle('shrink-thumb'); const on=document.body.classList.contains('shrink-thumb'); $('btnShrinkThumb').classList.toggle('on',on); localStorage.setItem('shrinkThumb',on?'1':'0'); });
+$('btnShrinkCam').addEventListener('click',()=>{ document.body.classList.toggle('shrink-cam'); const on=document.body.classList.contains('shrink-cam'); $('btnShrinkCam').classList.toggle('on',on); localStorage.setItem('shrinkCam',on?'1':'0'); });
 
 /* ===== Dark mode ===== */
 function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; localStorage.setItem(DARK_KEY,on?'1':'0'); }
@@ -1289,12 +1291,15 @@ listEl.addEventListener('scroll',closeAllRows); folderListEl.addEventListener('s
 
 /* restore prefs */
 applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
-/* thumbnails default to SMALL (shrink). Respect saved preference if user toggled before. */
+/* thumbnails default to SMALL; camera window defaults to large. Restore prefs. */
 (function(){
-  const saved=localStorage.getItem('shrinkMode');
-  const small = saved===null ? true : saved==='1';
-  document.body.classList.toggle('shrink',small);
-  $('btnShrink').classList.toggle('on',small);
+  const st=localStorage.getItem('shrinkThumb');
+  const thumbSmall = st===null ? true : st==='1';
+  document.body.classList.toggle('shrink-thumb',thumbSmall);
+  $('btnShrinkThumb').classList.toggle('on',thumbSmall);
+  const sc=localStorage.getItem('shrinkCam')==='1';
+  document.body.classList.toggle('shrink-cam',sc);
+  $('btnShrinkCam').classList.toggle('on',sc);
 })();
 /* ===== Settings panel ===== */
 const settingsEl=$('settings');
@@ -1383,7 +1388,22 @@ function tryUnlock(){
     document.body.classList.remove('locked');
     $('loginErr').textContent='';
     $('loginPw').value='';
-    if(!appStarted){ appStarted=true; init(); }
+    if(!appStarted){ appStarted=true; /* ===== Keep capture UI above the on-screen keyboard ===== */
+(function(){
+  const vv=window.visualViewport;
+  if(!vv) return;
+  function update(){
+    // keyboard height = layout viewport height - visual viewport height - offsetTop
+    const kb=Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty('--kb', kb+'px');
+    document.body.classList.toggle('kb-open', kb>60);
+  }
+  vv.addEventListener('resize',update);
+  vv.addEventListener('scroll',update);
+  update();
+})();
+
+init(); }
   } else {
     $('loginErr').textContent='Incorrect password';
     $('loginPw').value=''; $('loginPw').focus();
