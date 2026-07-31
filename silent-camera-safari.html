@@ -915,18 +915,35 @@ function renderViewer(){
 }
 function setupVideoControls(){
   const v=$('vwVideo'), play=$('vwPlay'), seek=$('vwSeek'), cur=$('vwCur'), dur=$('vwDur');
-  let seeking=false;
-  v.addEventListener('loadedmetadata',()=>{ dur.textContent=fmtTime(v.duration); seek.max=v.duration||0; });
-  v.addEventListener('timeupdate',()=>{ if(!seeking){ seek.value=v.currentTime; cur.textContent=fmtTime(v.currentTime); } });
+  let seeking=false, realDur=0, fixing=false;
+  function setDur(d){
+    if(isFinite(d)&&d>0){ realDur=d; dur.textContent=fmtTime(d); seek.max=d; }
+  }
+  // iOS/Chrome webm recordings often report duration = Infinity/NaN.
+  // Trick: seek far past the end; the browser then resolves the true duration.
+  function resolveDuration(){
+    if(isFinite(v.duration)&&v.duration>0){ setDur(v.duration); return; }
+    fixing=true;
+    const onSeeked=()=>{
+      v.removeEventListener('seeked',onSeeked);
+      setDur(v.duration);
+      try{ v.currentTime=0; }catch(e){}
+      fixing=false;
+    };
+    v.addEventListener('seeked',onSeeked);
+    try{ v.currentTime=1e9; }catch(e){ fixing=false; }
+  }
+  v.addEventListener('loadedmetadata',()=>{ resolveDuration(); });
+  v.addEventListener('durationchange',()=>{ if(!fixing) setDur(v.duration); });
+  v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ seek.value=v.currentTime; cur.textContent=fmtTime(v.currentTime); } });
   v.addEventListener('play',()=>{ play.textContent='❚❚'; setPlaybackAudioSession(); });
   v.addEventListener('pause',()=>{ play.textContent='▶'; });
   v.addEventListener('ended',()=>{ play.textContent='▶'; });
   play.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
-  // tap video to toggle play too
   v.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
-  const startSeek=()=>{ seeking=true; };
-  const doSeek=()=>{ cur.textContent=fmtTime(parseFloat(seek.value)); };
-  const endSeek=()=>{ v.currentTime=parseFloat(seek.value); seeking=false; };
+  const startSeek=()=>{ if(realDur>0)seeking=true; };
+  const doSeek=()=>{ if(seeking)cur.textContent=fmtTime(parseFloat(seek.value)); };
+  const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t))v.currentTime=t; seeking=false; };
   seek.addEventListener('input',doSeek);
   seek.addEventListener('pointerdown',startSeek);
   seek.addEventListener('touchstart',startSeek,{passive:true});
