@@ -225,7 +225,7 @@
   .login-brand { font-size:15px; font-weight:700; letter-spacing:.02em; color:#e8e8e8; text-align:center; }
   .login-sub { font-size:7.5px; font-weight:600; letter-spacing:.22em; color:#6a6a6a; text-align:center; }
   .login-rule { height:1px; background:linear-gradient(90deg,transparent,#c8732e,transparent); margin:6px 0 10px; }
-  .login-pw { width:100%; text-align:center; font-size:12px; letter-spacing:.15em; padding:11px; border:1px solid #333; background:#0c0c0c; color:#d8d8d8; border-radius:3px; outline:none; }
+  .login-pw { width:100%; text-align:center; font-size:12px; letter-spacing:.15em; padding:11px; border:1px solid #333; background:#0c0c0c; color:#d8d8d8; border-radius:3px; outline:none; -webkit-text-security:disc; text-security:disc; }
   .login-pw::placeholder { color:#4a4a4a; letter-spacing:.04em; font-size:10px; }
   .login-pw:focus { border-color:#c8732e; }
   .login-btn { width:100%; padding:11px; border:none; border-radius:3px; background:#c8732e; color:#fff; font-size:11px; font-weight:700; letter-spacing:.14em; }
@@ -243,8 +243,8 @@
       <div class="login-brand">기록 메모</div>
       <div class="login-sub">RECORD MEMO SECURE ACCESS</div>
       <div class="login-rule"></div>
-      <input class="login-pw" id="loginPw" type="password" inputmode="numeric" placeholder="Enter password to continue" autocomplete="off">
-      <button class="login-btn" id="loginBtn">UNLOCK</button>
+      <input class="login-pw" id="loginPw" type="text" inputmode="numeric" placeholder="Enter password to continue" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="app-lock-code" data-1p-ignore data-lpignore="true">
+      <button class="login-btn" id="loginBtn" type="button">UNLOCK</button>
       <div class="login-err" id="loginErr"></div>
       <div class="login-foot">AUTHORIZED ACCESS ONLY</div>
     </div>
