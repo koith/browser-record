@@ -164,17 +164,20 @@
   .viewer .vw-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:calc(10px + env(safe-area-inset-top)) 16px 10px; }
   .viewer .vw-top button { background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:980px; padding:9px 18px; font-size:15px; }
   .viewer .vw-stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden; position:relative; }
-  .viewer .vw-media { flex:1; display:flex; align-items:stretch; justify-content:center; width:100%; max-width:100%; min-height:0; }
-  .viewer .vw-media img { max-width:100%; max-height:100%; object-fit:contain; margin:auto; }
+  .viewer .vw-media { flex:1; display:flex; align-items:center; justify-content:center; width:100%; max-width:100%; min-height:0; overflow:hidden; }
+  .viewer .vw-media img, .viewer .vw-media video { max-width:100%; max-height:100%; object-fit:contain; }
   .viewer .vw-media > audio { margin:auto; }
+  .vctrl { flex:0 0 auto; width:100%; max-width:640px; margin:0 auto; display:flex; align-items:center; gap:10px; padding:10px 16px; }
+  .vctrl .vplay { flex:0 0 auto; width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,.18); color:#fff; font-size:15px; }
+  .vctrl .vtime { flex:0 0 auto; color:#fff; font-size:12px; font-variant-numeric:tabular-nums; min-width:36px; text-align:center; }
+  .vctrl .vseek { flex:1; -webkit-appearance:none; appearance:none; height:4px; border-radius:2px; background:rgba(255,255,255,.3); outline:none; touch-action:none; }
+  .vctrl .vseek::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:18px; height:18px; border-radius:50%; background:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.5); }
   .viewer .vw-nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:64px; border:none; background:rgba(255,255,255,.12); color:#fff; font-size:30px; border-radius:12px; z-index:2; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
   .viewer .vw-nav.prev { left:8px; }
   .viewer .vw-nav.next { right:8px; }
   .viewer .vw-nav:disabled { opacity:.25; }
   .viewer .vw-stage img, .viewer .vw-stage > video { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
   /* custom video player with seek timeline */
-  .vplayer { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:0; }
-  .vplayer video { width:100%; flex:1 1 auto; min-height:0; object-fit:contain; border-radius:6px; background:#000; }
   .vctrl { flex:0 0 auto; width:100%; max-width:520px; display:flex; align-items:center; gap:10px; padding:12px 10px 4px; }
   .vctrl .vplay { flex:0 0 auto; width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,.18); color:#fff; font-size:15px; }
   .vctrl .vtime { flex:0 0 auto; color:#fff; font-size:12px; font-variant-numeric:tabular-nums; min-width:36px; text-align:center; }
@@ -323,6 +326,12 @@
         <div class="vw-media" id="vwMedia"></div>
         <button class="vw-nav next" id="vwNext" aria-label="다음">›</button>
       </div>
+      <div class="vctrl" id="vwCtrl" style="display:none;">
+        <button class="vplay" id="vwPlay">▶</button>
+        <span class="vtime" id="vwCur">0:00</span>
+        <input class="vseek" id="vwSeek" type="range" min="0" max="100" step="0.1" value="0">
+        <span class="vtime" id="vwDur">0:00</span>
+      </div>
       <div class="vw-bottom"><button id="vwSave">저장 / 공유</button></div>
     </div>
 
@@ -383,7 +392,7 @@
     <div class="tb-spacer"></div>
     <button class="tb-btn" id="btnDark" aria-label="다크모드">🌙</button>
     <button class="tb-btn" id="btnShrinkThumb" aria-label="첨부 썸네일 크기" title="첨부 크기">🖼️</button>
-    <button class="tb-btn" id="btnShrinkCam" aria-label="촬영화면 크기" title="촬영화면 크기">🎬</button>
+    <button class="tb-btn" id="btnShrinkCam" aria-label="촬영화면 크기" title="촬영화면 크기" style="display:none;">🎬</button>
     <button class="cap-btn" id="capPhoto"><span class="ic-square"></span></button>
     <button class="cap-btn" id="capAudio"><span class="ic-mic">🎙️</span></button>
   </div>
@@ -890,19 +899,12 @@ function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
   const m=current.media[viewerIndex]; const url=mediaURL(m);
   if(m.kind==='video'){
-    vwMedia.innerHTML=
-      '<div class="vplayer">'+
-        '<video id="vwVideo" src="'+url+'" playsinline></video>'+
-        '<div class="vctrl">'+
-          '<button class="vplay" id="vwPlay">▶</button>'+
-          '<span class="vtime" id="vwCur">0:00</span>'+
-          '<input class="vseek" id="vwSeek" type="range" min="0" max="100" step="0.1" value="0">'+
-          '<span class="vtime" id="vwDur">0:00</span>'+
-        '</div>'+
-      '</div>';
+    vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
+    $('vwCtrl').style.display='flex';
     setupVideoControls();
   } else {
     vwMedia.innerHTML=m.kind==='audio'?'<audio src="'+url+'" controls></audio>':'<img src="'+url+'">';
+    $('vwCtrl').style.display='none';
     const el=vwMedia.querySelector('audio');
     if(el){ el.addEventListener('play',setPlaybackAudioSession); }
   }
@@ -940,6 +942,7 @@ function openViewer(i){
 function closeViewer(){
   viewer.classList.remove('open');
   vwMedia.innerHTML='';
+  $('vwCtrl').style.display='none';
   viewerIndex=-1;
   // make sure no leftover overlay keeps swallowing taps
   try{ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }catch(e){}
@@ -1019,7 +1022,7 @@ async function startStream(withVideo){
 async function openCamera(){
   if(!current)openEditor(null);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
-  cam.classList.add('open'); capDock.classList.add('open'); document.body.classList.add('cam-active');
+  cam.classList.add('open'); capDock.classList.add('open'); document.body.classList.add('cam-active'); document.getElementById('btnShrinkCam').style.display='flex';
   try{
     await startStream(true);
     try{ await detectLenses(); }catch(le){}
@@ -1129,7 +1132,7 @@ function closeCamera(){
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   try{ video.srcObject=null; }catch(e){}
   video.style.transform=''; $('zoomMenu').classList.remove('open');
-  stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active');
+  stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
   if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
 async function flipCamera(){
@@ -1226,7 +1229,7 @@ document.addEventListener('visibilitychange',()=>{
     // so iOS drops the green/orange indicator. Active recordings are left alone.
     if(!isRecording() && stream){
       try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){}
-      stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active');
+      stream=null; cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
     }
   } else {
     if(isRecording()) acquireWakeLock();
