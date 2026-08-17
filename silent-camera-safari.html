@@ -1261,6 +1261,10 @@ function stopRecUI(){ releaseWakeLock(); bigRec.classList.remove('recording'); r
    fall back to click on non-touch. A guard prevents double execution. */
 function bindTap(el, fn){
   let touched=false;
+  // Prevent the button from stealing focus from the memo input on touch —
+  // otherwise the first tap just dismisses the keyboard and the action is lost.
+  el.addEventListener('touchstart',e=>{ e.preventDefault(); },{passive:false});
+  el.addEventListener('mousedown',e=>{ e.preventDefault(); });
   el.addEventListener('touchend',e=>{ e.preventDefault(); touched=true; fn(); setTimeout(()=>touched=false,400); },{passive:false});
   el.addEventListener('click',()=>{ if(touched)return; fn(); });
 }
