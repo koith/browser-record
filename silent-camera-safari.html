@@ -888,11 +888,10 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
 function setPlaybackAudioSession(){
-  // After using the mic, iOS keeps a play-and-record audio session that ignores
-  // the silent switch. Force a playback-only session so the ringer/silent switch
-  // and volume are honored again during viewer playback.
-  try{ if(navigator.audioSession){ navigator.audioSession.type='playback'; } }catch(e){}
-  try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('playback'); } }catch(e){}
+  // 'ambient' makes media playback obey the hardware silent switch / volume.
+  // ('playback' would IGNORE the silent switch — the opposite of what we want.)
+  try{ if(navigator.audioSession){ navigator.audioSession.type='ambient'; } }catch(e){}
+  try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('ambient'); } }catch(e){}
 }
 function fmtTime(s){ if(!isFinite(s)||s<0)s=0; const m=Math.floor(s/60), sec=Math.floor(s%60); return m+':'+String(sec).padStart(2,'0'); }
 function renderViewer(){
@@ -936,12 +935,13 @@ function setupVideoControls(storedDur){
     if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); }
     raf=requestAnimationFrame(paint);
   }
-  v.addEventListener('play',()=>{ play.textContent='❚❚'; setPlaybackAudioSession(); cancelAnimationFrame(raf); paint(); });
+  v.addEventListener('play',()=>{ play.textContent='❚❚'; cancelAnimationFrame(raf); paint(); });
   v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
   v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
   v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } });
-  play.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
-  v.addEventListener('click',()=>{ if(v.paused)v.play(); else v.pause(); });
+  function togglePlay(){ if(v.paused){ setPlaybackAudioSession(); v.play(); } else v.pause(); }
+  play.addEventListener('click',togglePlay);
+  v.addEventListener('click',togglePlay);
   const startSeek=()=>{ if(realDur>0)seeking=true; };
   const doSeek=()=>{ if(seeking)cur.textContent=fmtTime(parseFloat(seek.value)); };
   const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t)){ try{ v.currentTime=t; }catch(e){} } seeking=false; };
