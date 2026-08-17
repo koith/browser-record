@@ -939,9 +939,10 @@ function setupVideoControls(storedDur){
   v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
   v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
   v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } });
-  function togglePlay(){ if(v.paused){ setPlaybackAudioSession(); v.play(); } else v.pause(); }
-  play.addEventListener('click',togglePlay);
-  v.addEventListener('click',togglePlay);
+  let lastToggle=0;
+  function togglePlay(){ const now=Date.now(); if(now-lastToggle<300)return; lastToggle=now; if(v.paused){ setPlaybackAudioSession(); v.play(); } else v.pause(); }
+  play.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
+  v.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
   const startSeek=()=>{ if(realDur>0)seeking=true; };
   const doSeek=()=>{ if(seeking)cur.textContent=fmtTime(parseFloat(seek.value)); };
   const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t)){ try{ v.currentTime=t; }catch(e){} } seeking=false; };
