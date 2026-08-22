@@ -420,6 +420,17 @@ const urlCache=new WeakMap();
 function blobURL(b){ if(!b)return''; if(urlCache.has(b))return urlCache.get(b); const u=URL.createObjectURL(b); urlCache.set(b,u); return u; }
 function mediaURL(m){ if(!m||!m.blob)return''; if(m._url)return m._url; m._url=blobURL(m.blob); return m._url; }
 function posterURL(m){ if(!m||!m.poster)return''; if(m._purl)return m._purl; m._purl=blobURL(m.poster); return m._purl; }
+// If an <img> thumbnail fails (e.g. its object URL was invalidated), mint a brand
+// new URL straight from the blob and retry once.
+function recoverThumb(imgEl, blob){
+  try{
+    if(!blob){ return; }
+    urlCache.delete(blob);
+    const u=URL.createObjectURL(blob);
+    urlCache.set(blob,u);
+    if(!imgEl.dataset.recovered){ imgEl.dataset.recovered='1'; imgEl.src=u; }
+  }catch(e){}
+}
 
 const $=id=>document.getElementById(id);
 const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
@@ -777,11 +788,18 @@ function renderEditorMedia(){
   const wrap=$('edMedia'); wrap.innerHTML='';
   (current.media||[]).forEach((m,i)=>{
     const el=document.createElement('div'); el.className='m'+(m.kind==='audio'?' audio':'');
-    let inner;
-    if(m.kind==='video') inner=(m.poster?'<img src="'+posterURL(m)+'">':'<video src="'+mediaURL(m)+'#t=0.1" muted playsinline preload="metadata"></video>')+'<span class="play-badge">▶</span>';
-    else if(m.kind==='audio') inner='🎙️';
-    else inner='<img src="'+mediaURL(m)+'">';
-    el.innerHTML=inner+'<button class="rm" data-i="'+i+'">×</button>';
+    if(m.kind==='audio'){
+      el.innerHTML='🎙️';
+    } else {
+      const img=document.createElement('img');
+      img.src = m.kind==='video' ? (m.poster?posterURL(m):mediaURL(m)) : mediaURL(m);
+      const srcBlob = (m.kind==='video' && m.poster) ? m.poster : m.blob;
+      img.addEventListener('error',()=>recoverThumb(img, srcBlob));
+      el.appendChild(img);
+      if(m.kind==='video'){ const pb=document.createElement('span'); pb.className='play-badge'; pb.textContent='▶'; el.appendChild(pb); }
+    }
+    const rm=document.createElement('button'); rm.className='rm'; rm.dataset.i=i; rm.textContent='×';
+    el.appendChild(rm);
     el.addEventListener('click',e=>{ if(e.target.classList.contains('rm'))return; openViewer(i); });
     wrap.appendChild(el);
   });
@@ -960,14 +978,14 @@ function openViewer(i){
 }
 function closeViewer(){
   cancelAnimationFrame(vwRaf);
-  // stop and fully release any playing video before tearing down the overlay
+  // pause only — do NOT removeAttribute('src')/load(), that can invalidate the
+  // blob URL shared with the list/editor thumbnails and break them.
   const vid=document.getElementById('vwVideo');
-  if(vid){ try{ vid.pause(); vid.removeAttribute('src'); vid.load(); }catch(e){} }
+  if(vid){ try{ vid.pause(); }catch(e){} }
   viewer.classList.remove('open');
   vwMedia.innerHTML='';
   $('vwCtrl').style.display='none';
   viewerIndex=-1;
-  // belt-and-suspenders: clear any overlay that could swallow taps
   try{ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }catch(e){}
 }
 function viewerStep(d){
