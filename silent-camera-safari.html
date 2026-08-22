@@ -912,18 +912,17 @@ function renderViewer(){
   $('vwPrev').disabled=viewerIndex<=0;
   $('vwNext').disabled=viewerIndex>=total-1;
 }
+let vwRaf=0;
 function setupVideoControls(storedDur){
   const v=$('vwVideo'), play=$('vwPlay'), seek=$('vwSeek'), cur=$('vwCur'), dur=$('vwDur');
-  let seeking=false, realDur=0, fixing=false, raf=0;
+  let seeking=false, realDur=0, fixing=false;
   function setDur(d){
     if(isFinite(d)&&d>0){ realDur=d; dur.textContent=fmtTime(d); seek.max=d; seek.step=Math.max(0.05, d/1000); }
   }
-  // 1) Prefer the duration we measured at record time (most reliable for webm)
   if(storedDur&&isFinite(storedDur)&&storedDur>0){ setDur(storedDur); }
-  // 2) Also try the file's own metadata; if Infinity, use the seek trick
   function resolveDuration(){
     if(isFinite(v.duration)&&v.duration>0){ setDur(v.duration); return; }
-    if(realDur>0) return; // already have stored duration, no need for trick
+    if(realDur>0) return;
     fixing=true;
     const onSeeked=()=>{ v.removeEventListener('seeked',onSeeked); setDur(v.duration); try{ v.currentTime=0; }catch(e){} fixing=false; };
     v.addEventListener('seeked',onSeeked);
@@ -932,12 +931,13 @@ function setupVideoControls(storedDur){
   v.addEventListener('loadedmetadata',resolveDuration);
   v.addEventListener('durationchange',()=>{ if(!fixing && isFinite(v.duration)&&v.duration>0) setDur(v.duration); });
   function paint(){
+    if(!document.getElementById('vwVideo')){ cancelAnimationFrame(vwRaf); return; } // video gone -> stop loop
     if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); }
-    raf=requestAnimationFrame(paint);
+    vwRaf=requestAnimationFrame(paint);
   }
-  v.addEventListener('play',()=>{ play.textContent='❚❚'; cancelAnimationFrame(raf); paint(); });
-  v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
-  v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(raf); });
+  v.addEventListener('play',()=>{ play.textContent='❚❚'; cancelAnimationFrame(vwRaf); paint(); });
+  v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); });
+  v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); });
   v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } });
   let lastToggle=0;
   function togglePlay(){ const now=Date.now(); if(now-lastToggle<300)return; lastToggle=now; if(v.paused){ setPlaybackAudioSession(); v.play(); } else v.pause(); }
@@ -959,11 +959,15 @@ function openViewer(i){
   viewerIndex=i; renderViewer(); viewer.classList.add('open');
 }
 function closeViewer(){
+  cancelAnimationFrame(vwRaf);
+  // stop and fully release any playing video before tearing down the overlay
+  const vid=document.getElementById('vwVideo');
+  if(vid){ try{ vid.pause(); vid.removeAttribute('src'); vid.load(); }catch(e){} }
   viewer.classList.remove('open');
   vwMedia.innerHTML='';
   $('vwCtrl').style.display='none';
   viewerIndex=-1;
-  // make sure no leftover overlay keeps swallowing taps
+  // belt-and-suspenders: clear any overlay that could swallow taps
   try{ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }catch(e){}
 }
 function viewerStep(d){
