@@ -166,6 +166,7 @@
   .viewer .vw-stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; overflow:hidden; position:relative; }
   .viewer .vw-media { flex:1; display:flex; align-items:center; justify-content:center; width:100%; max-width:100%; min-height:0; overflow:hidden; }
   .viewer .vw-media img, .viewer .vw-media video { max-width:100%; max-height:100%; object-fit:contain; }
+  .viewer .vw-media #vwImg { touch-action:none; transform-origin:center center; will-change:transform; }
   .viewer .vw-media > audio { margin:auto; }
   .vctrl { flex:0 0 auto; width:100%; max-width:640px; margin:0 auto; display:flex; align-items:center; gap:10px; padding:10px 16px; }
   .vctrl .vplay { flex:0 0 auto; width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,.18); color:#fff; font-size:15px; }
@@ -905,6 +906,11 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
+// Prevent iOS page-level pinch (which, with user-scalable=no, can cause the page
+// to jump/reload) while the viewer is open — the image handles its own zoom.
+['gesturestart','gesturechange','gestureend'].forEach(ev=>{
+  viewer.addEventListener(ev,e=>{ e.preventDefault(); },{passive:false});
+});
 function setPlaybackAudioSession(){
   // 'ambient' makes media playback obey the hardware silent switch / volume.
   // ('playback' would IGNORE the silent switch — the opposite of what we want.)
@@ -912,6 +918,41 @@ function setPlaybackAudioSession(){
   try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('ambient'); } }catch(e){}
 }
 function fmtTime(s){ if(!isFinite(s)||s<0)s=0; const m=Math.floor(s/60), sec=Math.floor(s%60); return m+':'+String(sec).padStart(2,'0'); }
+function setupImageZoom(){
+  const img=$('vwImg'); if(!img) return;
+  let scale=1, tx=0, ty=0;
+  let startDist=0, startScale=1, startX=0, startY=0, startTx=0, startTy=0, mode=null;
+  function apply(){ img.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')'; }
+  function dist(t){ const dx=t[0].clientX-t[1].clientX, dy=t[0].clientY-t[1].clientY; return Math.hypot(dx,dy); }
+  function mid(t){ return {x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2}; }
+  img.addEventListener('touchstart',e=>{
+    if(e.touches.length===2){
+      mode='pinch'; startDist=dist(e.touches); startScale=scale;
+      const m=mid(e.touches); startX=m.x; startY=m.y; startTx=tx; startTy=ty;
+      e.preventDefault();
+    } else if(e.touches.length===1 && scale>1){
+      mode='pan'; startX=e.touches[0].clientX; startY=e.touches[0].clientY; startTx=tx; startTy=ty;
+      e.preventDefault();
+    } else { mode=null; }
+  },{passive:false});
+  img.addEventListener('touchmove',e=>{
+    if(mode==='pinch' && e.touches.length===2){
+      const d=dist(e.touches); scale=Math.max(1,Math.min(5,startScale*(d/startDist)));
+      const m=mid(e.touches); tx=startTx+(m.x-startX); ty=startTy+(m.y-startY);
+      apply(); e.preventDefault();
+    } else if(mode==='pan' && e.touches.length===1){
+      tx=startTx+(e.touches[0].clientX-startX); ty=startTy+(e.touches[0].clientY-startY);
+      apply(); e.preventDefault();
+    }
+  },{passive:false});
+  img.addEventListener('touchend',e=>{
+    if(scale<=1.02){ scale=1; tx=0; ty=0; apply(); }
+    if(e.touches.length===0) mode=null;
+    const now=Date.now();
+    if(now-(img._lastTap||0)<300){ scale=1; tx=0; ty=0; apply(); e.preventDefault(); }
+    img._lastTap=now;
+  },{passive:false});
+}
 function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
   const m=current.media[viewerIndex]; const url=mediaURL(m);
@@ -919,11 +960,15 @@ function renderViewer(){
     vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
     $('vwCtrl').style.display='flex';
     setupVideoControls(m.duration||0);
-  } else {
-    vwMedia.innerHTML=m.kind==='audio'?'<audio src="'+url+'" controls></audio>':'<img src="'+url+'">';
+  } else if(m.kind==='audio'){
+    vwMedia.innerHTML='<audio src="'+url+'" controls></audio>';
     $('vwCtrl').style.display='none';
     const el=vwMedia.querySelector('audio');
     if(el){ el.addEventListener('play',setPlaybackAudioSession); }
+  } else {
+    vwMedia.innerHTML='<img id="vwImg" src="'+url+'" alt="">';
+    $('vwCtrl').style.display='none';
+    setupImageZoom();
   }
   const total=current.media.length;
   $('vwCounter').textContent=(viewerIndex+1)+' / '+total;
@@ -1002,9 +1047,13 @@ bindNav($('vwNext'),()=>viewerStep(1));
 /* swipe left/right on the media area */
 (function(){
   let sx=0,sy=0,act=false;
-  vwMedia.addEventListener('touchstart',e=>{ const t=e.touches[0]; sx=t.clientX; sy=t.clientY; act=true; },{passive:true});
+  vwMedia.addEventListener('touchstart',e=>{ if(e.touches.length>1){act=false;return;} const t=e.touches[0]; sx=t.clientX; sy=t.clientY; act=true; },{passive:true});
   vwMedia.addEventListener('touchend',e=>{
-    if(!act)return; act=false; const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(!act)return; act=false;
+    // ignore if the image is pinch-zoomed (its transform is scaled)
+    const img=document.getElementById('vwImg');
+    if(img && img.style.transform && img.style.transform.indexOf('scale(1)')===-1 && img.style.transform.indexOf('scale')!==-1) return;
+    const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy;
     if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ viewerStep(dx<0?1:-1); }
   },{passive:true});
 })();
