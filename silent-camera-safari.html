@@ -441,6 +441,42 @@ function recoverThumb(imgEl, blob){
   }catch(e){}
 }
 
+// iOS Safari can keep a stale backing-store relationship for IndexedDB Blobs
+// after a media element has consumed them. Rehydrate through ArrayBuffer so each
+// UI surface gets a physically new Blob and object URL instead of sharing one.
+async function isolatedBlobURL(blob){
+  if(!blob || typeof blob.arrayBuffer!=='function') throw new Error('invalid blob');
+  const buf=await blob.arrayBuffer();
+  const fresh=new Blob([buf],{type:blob.type||'application/octet-stream'});
+  return URL.createObjectURL(fresh);
+}
+async function hydrateImgFromBlob(img, blob, fallback){
+  if(!img)return;
+  try{
+    const u=await isolatedBlobURL(blob);
+    if(!img.isConnected)return;
+    img.src=u;
+    img.onerror=()=>{
+      const ph=document.createElement('span'); ph.className='ph'; ph.textContent=fallback||'🖼️';
+      if(img.isConnected)img.replaceWith(ph);
+    };
+  }catch(e){
+    const ph=document.createElement('span'); ph.className='ph'; ph.textContent=fallback||'🖼️';
+    if(img.isConnected)img.replaceWith(ph);
+  }
+}
+function hydrateMediaThumbs(root, mediaItems){
+  if(!root)return;
+  const imgs=[...root.querySelectorAll('img[data-thumb]')];
+  let ii=0;
+  for(const m of (mediaItems||[])){
+    if(m.kind==='audio' || (m.kind==='video' && !m.poster)) continue;
+    const img=imgs[ii++]; if(!img)break;
+    const blob=(m.kind==='video' && m.poster)?m.poster:m.blob;
+    hydrateImgFromBlob(img,blob,m.kind==='video'?'🎬':'🖼️');
+  }
+}
+
 const $=id=>document.getElementById(id);
 const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
 const toast=$('toast'); let toastTimer;
@@ -504,10 +540,10 @@ function closeAllRows(){ openRows.forEach(r=>r._reset&&r._reset()); }
 /* ===== NOTE LIST ===== */
 function mediaCell(m){
   if(m.kind==='video') return m.poster
-    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🎬\',className:\'ph\'}))"><span class="play-badge">▶</span></div>'
+    ? '<div class="m"><img data-thumb="1" loading="lazy"><span class="play-badge">▶</span></div>'
     : '<div class="m"><span class="ph">🎬</span><span class="play-badge">▶</span></div>';
   if(m.kind==='audio') return '<div class="m audio">🎙️</div>';
-  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🖼️\',className:\'ph\'}))"></div>';
+  return '<div class="m"><img data-thumb="1" loading="lazy"></div>';
 }
 function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
 function showNotes(){
@@ -555,6 +591,7 @@ function renderNotes(){
           ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
+    hydrateMediaThumbs(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,6));
     content.addEventListener('click',e=>{ if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; } openEditor(n); });
     wrap.querySelector('.move').addEventListener('click',()=>{ closeAllRows(); openMoveSheet(n); });
     wrap.querySelector('.del').addEventListener('click',async()=>{ await del(NOTES,n.id); notes=notes.filter(x=>x.id!==n.id); renderNotes(); });
@@ -601,6 +638,7 @@ function renderFolders(){
           (media?'<div class="nc-media">'+media+'</div>':'')+
           '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span></div>'+
           '</div></div>';
+        hydrateMediaThumbs(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,4));
         wrap.querySelector('.swipe-content').addEventListener('click',()=>{ currentFolderId=f.id; showNotes(); setTimeout(()=>openEditor(n),0); });
         grp.appendChild(wrap);
       });
@@ -801,10 +839,9 @@ function renderEditorMedia(){
       el.innerHTML='🎙️';
     } else {
       const img=document.createElement('img');
-      img.src = m.kind==='video' ? (m.poster?posterURL(m):mediaURL(m)) : mediaURL(m);
       const srcBlob = (m.kind==='video' && m.poster) ? m.poster : m.blob;
-      img.addEventListener('error',()=>recoverThumb(img, srcBlob));
       el.appendChild(img);
+      hydrateImgFromBlob(img,srcBlob,m.kind==='video'?'🎬':'🖼️');
       if(m.kind==='video'){ const pb=document.createElement('span'); pb.className='play-badge'; pb.textContent='▶'; el.appendChild(pb); }
     }
     const rm=document.createElement('button'); rm.className='rm'; rm.dataset.i=i; rm.textContent='×';
@@ -915,6 +952,7 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
 let viewerObjectURL='';
+let viewerLoadSeq=0;
 function releaseViewerObjectURL(){
   // Deliberately do NOT revoke blob URLs on iOS Safari.
   // Revoking a viewer URL has repeatedly invalidated thumbnail/playback URLs
@@ -968,11 +1006,16 @@ function setupImageZoom(){
     img._lastTap=now;
   },{passive:false});
 }
-function renderViewer(){
+async function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
+  const seq=++viewerLoadSeq;
   releaseViewerObjectURL();
+  vwMedia.innerHTML='';
   const m=current.media[viewerIndex];
-  const url=(m&&m.blob)?URL.createObjectURL(m.blob):'';
+  let url='';
+  try{ url=await isolatedBlobURL(m&&m.blob); }
+  catch(e){ if(seq===viewerLoadSeq) showToast('첨부파일을 읽지 못했습니다'); return; }
+  if(seq!==viewerLoadSeq)return;
   viewerObjectURL=url;
   if(m.kind==='video'){
     vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
@@ -1040,6 +1083,7 @@ function openViewer(i){
   viewerIndex=i; renderViewer(); viewer.classList.add('open');
 }
 function closeViewer(){
+  viewerLoadSeq++;
   cancelAnimationFrame(vwRaf);
   const vid=document.getElementById('vwVideo');
   if(vid){ try{ vid.pause(); }catch(e){} }
