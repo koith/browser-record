@@ -1,0 +1,32 @@
+name: Fix media bytes and pinch v7
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/fix_media_bytes_and_global_pinch_v7.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch media bytes and global pinch
+        run: python tools/fix_media_bytes_and_global_pinch_v7.py
+      - name: Check JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text()
+          js=s.split('<script>',1)[1].rsplit('</script>',1)[0]
+          Path('/tmp/app.js').write_text(js)
+          PY
+          node --check /tmp/app.js
+      - name: Commit fix and remove temporary files
+        run: |
+          rm .github/workflows/fix-media-bytes-pinch-v7.yml tools/fix_media_bytes_and_global_pinch_v7.py
+          git config user.name chatgpt-bot
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: isolate media blobs and block native pinch globally'
+          git push
