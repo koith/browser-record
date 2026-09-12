@@ -423,14 +423,29 @@ function mediaURL(m){ if(!m||!m.blob)return''; if(m._url)return m._url; m._url=b
 function posterURL(m){ if(!m||!m.poster)return''; if(m._purl)return m._purl; m._purl=blobURL(m.poster); return m._purl; }
 // If an <img> thumbnail fails (e.g. its object URL was invalidated), mint a brand
 // new URL straight from the blob and retry once.
-function recoverThumb(imgEl, blob){
+function recoverThumb(imgEl, blob, media, usePoster){
   try{
     if(!blob){ return; }
     urlCache.delete(blob);
+    if(media){ if(usePoster) media._purl=''; else media._url=''; }
     const u=URL.createObjectURL(blob);
     urlCache.set(blob,u);
+    if(media){ if(usePoster) media._purl=u; else media._url=u; }
     if(!imgEl.dataset.recovered){ imgEl.dataset.recovered='1'; imgEl.src=u; }
   }catch(e){}
+}
+function bindMediaThumbRecovery(root, mediaItems){
+  if(!root)return;
+  const imgs=[...root.querySelectorAll('img')];
+  let ii=0;
+  for(const m of (mediaItems||[])){
+    if(m.kind==='audio' || (m.kind==='video' && !m.poster)) continue;
+    const img=imgs[ii++]; if(!img) break;
+    const usePoster=m.kind==='video' && !!m.poster;
+    const blob=usePoster?m.poster:m.blob;
+    img.onerror=null;
+    img.addEventListener('error',()=>recoverThumb(img,blob,m,usePoster));
+  }
 }
 // iOS can invalidate an object URL after a media element has played it even when
 // the Blob itself is still valid. Never carry those cached URLs across viewer/editor
@@ -507,10 +522,10 @@ function closeAllRows(){ openRows.forEach(r=>r._reset&&r._reset()); }
 /* ===== NOTE LIST ===== */
 function mediaCell(m){
   if(m.kind==='video') return m.poster
-    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🎬\',className:\'ph\'}))"><span class="play-badge">▶</span></div>'
+    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy"><span class="play-badge">▶</span></div>'
     : '<div class="m"><span class="ph">🎬</span><span class="play-badge">▶</span></div>';
   if(m.kind==='audio') return '<div class="m audio">🎙️</div>';
-  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🖼️\',className:\'ph\'}))"></div>';
+  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy"></div>';
 }
 function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
 function showNotes(){
@@ -558,6 +573,7 @@ function renderNotes(){
           ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
+    bindMediaThumbRecovery(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,6));
     content.addEventListener('click',e=>{ if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; } openEditor(n); });
     wrap.querySelector('.move').addEventListener('click',()=>{ closeAllRows(); openMoveSheet(n); });
     wrap.querySelector('.del').addEventListener('click',async()=>{ await del(NOTES,n.id); notes=notes.filter(x=>x.id!==n.id); renderNotes(); });
@@ -604,6 +620,7 @@ function renderFolders(){
           (media?'<div class="nc-media">'+media+'</div>':'')+
           '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span></div>'+
           '</div></div>';
+        bindMediaThumbRecovery(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,4));
         wrap.querySelector('.swipe-content').addEventListener('click',()=>{ currentFolderId=f.id; showNotes(); setTimeout(()=>openEditor(n),0); });
         grp.appendChild(wrap);
       });
@@ -809,8 +826,9 @@ function renderEditorMedia(){
     } else {
       const img=document.createElement('img');
       img.src = m.kind==='video' ? (m.poster?posterURL(m):mediaURL(m)) : mediaURL(m);
-      const srcBlob = (m.kind==='video' && m.poster) ? m.poster : m.blob;
-      img.addEventListener('error',()=>recoverThumb(img, srcBlob));
+      const usePoster = m.kind==='video' && !!m.poster;
+      const srcBlob = usePoster ? m.poster : m.blob;
+      img.addEventListener('error',()=>recoverThumb(img, srcBlob, m, usePoster));
       el.appendChild(img);
       if(m.kind==='video'){ const pb=document.createElement('span'); pb.className='play-badge'; pb.textContent='▶'; el.appendChild(pb); }
     }
