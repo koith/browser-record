@@ -409,8 +409,16 @@ function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,
   r.onsuccess=e=>{db=e.target.result;res(db);}; r.onerror=e=>rej(e.target.error);});}
 function st(store,m){return db.transaction(store,m).objectStore(store);}
 function cleanForSave(v){
-  if(v&&v.media){ v.media.forEach(m=>{ delete m._url; delete m._purl; }); }
-  return v;
+  if(!v)return v;
+  const copy={...v};
+  if(v.media){
+    copy.media=v.media.map(m=>{
+      const mc={...m};
+      delete mc._url; delete mc._purl;
+      return mc;
+    });
+  }
+  return copy;
 }
 function put(store,v){return new Promise((res,rej)=>{const r=st(store,'readwrite').put(store===NOTES?cleanForSave(v):v);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
 function del(store,id){return new Promise((res,rej)=>{const r=st(store,'readwrite').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
@@ -908,9 +916,10 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
 let viewerObjectURL='';
 function releaseViewerObjectURL(){
-  if(!viewerObjectURL)return;
-  const old=viewerObjectURL; viewerObjectURL='';
-  setTimeout(()=>{ try{ URL.revokeObjectURL(old); }catch(e){} },0);
+  // Deliberately do NOT revoke blob URLs on iOS Safari.
+  // Revoking a viewer URL has repeatedly invalidated thumbnail/playback URLs
+  // backed by the same IndexedDB Blob. We only drop our reference here.
+  viewerObjectURL='';
 }
 // Prevent iOS page-level pinch (which, with user-scalable=no, can cause the page
 // to jump/reload) while the viewer is open — the image handles its own zoom.
