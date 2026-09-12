@@ -1,0 +1,34 @@
+name: Fix media lifecycle v3
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-media-lifecycle-v3.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch media lifecycle
+        run: python3 tools/fix_media_lifecycle_v3.py
+      - name: Check JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>'); b=s.rfind('</script>')
+          if a<0 or b<a: raise SystemExit('script block not found')
+          Path('/tmp/app.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+      - name: Commit fix and remove temporary files
+        run: |
+          rm .github/workflows/fix-media-lifecycle-v3.yml tools/fix_media_lifecycle_v3.py
+          git config user.name 'chatgpt-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: stop revoking media blob URLs on iOS'
+          git push origin main
