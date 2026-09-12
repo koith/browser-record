@@ -1,0 +1,40 @@
+name: Fix media blob rehydrate v4
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-media-blob-rehydrate-v4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch media blob rehydration
+        run: python tools/fix_media_blob_rehydrate_v4.py
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('silent-camera-safari.html').read_text(encoding='utf-8')
+          m=re.search(r'<script>([\s\S]*?)</script>', s)
+          if not m: raise SystemExit('script block not found')
+          Path('/tmp/app.js').write_text(m.group(1), encoding='utf-8')
+          PY
+          node --check /tmp/app.js
+      - name: Commit fix and remove temporary files
+        shell: bash
+        run: |
+          rm .github/workflows/fix-media-blob-rehydrate-v4.yml tools/fix_media_blob_rehydrate_v4.py
+          git config user.name 'chatgpt-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: rehydrate indexeddb blobs before thumbnails and playback'
+          git push origin main
