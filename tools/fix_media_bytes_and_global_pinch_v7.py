@@ -10,3 +10,4 @@ new2="""// Block Safari page pinch globally at capture phase. The dedicated atta
 if old2 not in s: raise SystemExit('editor pinch block not found')
 s=s.replace(old2,new2)
 p.write_text(s)
+# trigger
