@@ -1,0 +1,31 @@
+name: Fix media fresh blob cache v5
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-media-freshblob-cache-v5.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch fresh blob cache
+        run: python tools/fix-media-freshblob-cache-v5.py
+      - name: Check JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text()
+          js=s.split('<script>',1)[1].rsplit('</script>',1)[0]
+          Path('/tmp/app.js').write_text(js)
+          PY
+          node --check /tmp/app.js
+      - name: Commit fix and remove temporary files
+        run: |
+          rm .github/workflows/fix-media-freshblob-cache-v5.yml tools/fix-media-freshblob-cache-v5.py
+          git config user.name chatgpt-bot
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: cache rehydrated media blobs for repeat playback"
+          git push
