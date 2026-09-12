@@ -441,13 +441,25 @@ function recoverThumb(imgEl, blob){
   }catch(e){}
 }
 
-// iOS Safari can keep a stale backing-store relationship for IndexedDB Blobs
-// after a media element has consumed them. Rehydrate through ArrayBuffer so each
-// UI surface gets a physically new Blob and object URL instead of sharing one.
-async function isolatedBlobURL(blob){
+// iOS Safari may fail when the same IndexedDB-backed Blob is read more than once.
+// Read each source Blob exactly once, cache an in-memory clone, and create independent
+// object URLs from that clone for list/editor/viewer surfaces.
+const freshBlobCache=new WeakMap();
+async function freshBlob(blob){
   if(!blob || typeof blob.arrayBuffer!=='function') throw new Error('invalid blob');
-  const buf=await blob.arrayBuffer();
-  const fresh=new Blob([buf],{type:blob.type||'application/octet-stream'});
+  let pending=freshBlobCache.get(blob);
+  if(!pending){
+    pending=(async()=>{
+      const buf=await blob.arrayBuffer();
+      return new Blob([buf],{type:blob.type||'application/octet-stream'});
+    })();
+    freshBlobCache.set(blob,pending);
+  }
+  try{ return await pending; }
+  catch(e){ freshBlobCache.delete(blob); throw e; }
+}
+async function isolatedBlobURL(blob){
+  const fresh=await freshBlob(blob);
   return URL.createObjectURL(fresh);
 }
 async function hydrateImgFromBlob(img, blob, fallback){
