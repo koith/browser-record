@@ -96,7 +96,7 @@
   .swipe-actions { visibility:hidden; }
   .swipe-wrap.swiping .swipe-actions, .swipe-wrap.opened .swipe-actions { visibility:visible; }
 
-  .editor { position:absolute; inset:0; background:var(--paper); display:none; flex-direction:column; }
+  .editor { position:absolute; inset:0; background:var(--paper); display:none; flex-direction:column; touch-action:pan-y; }
   .editor.open { display:flex; }
   .editor .ed-top { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:.5px solid var(--border); background:var(--panel); position:relative; z-index:5; }
   .ed-top button { border:none; background:none; color:var(--blue); font-size:15px; font-weight:500; padding:8px 6px; }
@@ -885,8 +885,16 @@ async function saveCurrent(){
   if(!notes.some(n=>n.id===current.id))notes.push(current);
   showToast('저장되었습니다'); closeEditor();
 }
-$('edBack').addEventListener('click',saveCurrent);
+// iOS Safari can consume the first tap only to dismiss the keyboard.
+// Use the same touch-safe tap binding as the capture controls so Back always fires.
+bindTap($('edBack'), saveCurrent);
 $('btnSave').addEventListener('click',saveCurrent);
+
+// Do not allow page/editor pinch zoom. Attachment image pinch remains available
+// inside the dedicated viewer because these guards are scoped to #editor only.
+editor.addEventListener('touchmove',e=>{ if(e.touches&&e.touches.length>1)e.preventDefault(); },{passive:false});
+editor.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
+editor.addEventListener('gesturechange',e=>e.preventDefault(),{passive:false});
 $('edTitle').addEventListener('input',updateDeleteBtn);
 $('edText').addEventListener('input',updateDeleteBtn);
 $('edDelete').addEventListener('click',async()=>{ if(current&&current.id){ await del(NOTES,current.id); notes=notes.filter(n=>n.id!==current.id);} closeEditor(); });
