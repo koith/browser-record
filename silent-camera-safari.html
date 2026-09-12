@@ -432,6 +432,17 @@ function recoverThumb(imgEl, blob){
     if(!imgEl.dataset.recovered){ imgEl.dataset.recovered='1'; imgEl.src=u; }
   }catch(e){}
 }
+// iOS can invalidate an object URL after a media element has played it even when
+// the Blob itself is still valid. Never carry those cached URLs across viewer/editor
+// teardown; force the next render to mint fresh URLs from the stored Blobs.
+function invalidateMediaURLs(m){
+  if(!m)return;
+  if(m.blob){ urlCache.delete(m.blob); m._url=''; }
+  if(m.poster){ urlCache.delete(m.poster); m._purl=''; }
+}
+function invalidateNoteMedia(note){
+  (note&&note.media||[]).forEach(invalidateMediaURLs);
+}
 
 const $=id=>document.getElementById(id);
 const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
@@ -780,7 +791,11 @@ function openEditor(note){
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
-  closeCamera(); editor.classList.remove('open'); current=null;
+  closeCamera();
+  // Do not let viewer-used object URLs leak into the note-list thumbnails.
+  // The Blobs stay in IndexedDB; only their disposable URL cache is cleared.
+  if(current) invalidateNoteMedia(current);
+  editor.classList.remove('open'); current=null;
   if(view==='notes'){ $('btnNew').style.display='flex'; $('subbar').classList.remove('hidden'); }
   $('btnSave').style.display='none';
   if(!silent && view==='notes') renderNotes();
@@ -1023,15 +1038,19 @@ function openViewer(i){
 }
 function closeViewer(){
   cancelAnimationFrame(vwRaf);
-  // pause only — do NOT removeAttribute('src')/load(), that can invalidate the
-  // blob URL shared with the list/editor thumbnails and break them.
+  // pause only — do NOT removeAttribute('src')/load(); iOS may invalidate the
+  // shared object URL. After teardown we deliberately forget the cached URL and
+  // rebuild editor thumbnails from the original Blob.
+  const viewed=(current&&current.media&&viewerIndex>=0)?current.media[viewerIndex]:null;
   const vid=document.getElementById('vwVideo');
   if(vid){ try{ vid.pause(); }catch(e){} }
   viewer.classList.remove('open');
   vwMedia.innerHTML='';
   $('vwCtrl').style.display='none';
+  if(viewed) invalidateMediaURLs(viewed);
   viewerIndex=-1;
   try{ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }catch(e){}
+  if(current) renderEditorMedia();
 }
 function viewerStep(d){
   if(!current||!current.media)return;
