@@ -423,40 +423,14 @@ function mediaURL(m){ if(!m||!m.blob)return''; if(m._url)return m._url; m._url=b
 function posterURL(m){ if(!m||!m.poster)return''; if(m._purl)return m._purl; m._purl=blobURL(m.poster); return m._purl; }
 // If an <img> thumbnail fails (e.g. its object URL was invalidated), mint a brand
 // new URL straight from the blob and retry once.
-function recoverThumb(imgEl, blob, media, usePoster){
+function recoverThumb(imgEl, blob){
   try{
     if(!blob){ return; }
     urlCache.delete(blob);
-    if(media){ if(usePoster) media._purl=''; else media._url=''; }
     const u=URL.createObjectURL(blob);
     urlCache.set(blob,u);
-    if(media){ if(usePoster) media._purl=u; else media._url=u; }
     if(!imgEl.dataset.recovered){ imgEl.dataset.recovered='1'; imgEl.src=u; }
   }catch(e){}
-}
-function bindMediaThumbRecovery(root, mediaItems){
-  if(!root)return;
-  const imgs=[...root.querySelectorAll('img')];
-  let ii=0;
-  for(const m of (mediaItems||[])){
-    if(m.kind==='audio' || (m.kind==='video' && !m.poster)) continue;
-    const img=imgs[ii++]; if(!img) break;
-    const usePoster=m.kind==='video' && !!m.poster;
-    const blob=usePoster?m.poster:m.blob;
-    img.onerror=null;
-    img.addEventListener('error',()=>recoverThumb(img,blob,m,usePoster));
-  }
-}
-// iOS can invalidate an object URL after a media element has played it even when
-// the Blob itself is still valid. Never carry those cached URLs across viewer/editor
-// teardown; force the next render to mint fresh URLs from the stored Blobs.
-function invalidateMediaURLs(m){
-  if(!m)return;
-  if(m.blob){ urlCache.delete(m.blob); m._url=''; }
-  if(m.poster){ urlCache.delete(m.poster); m._purl=''; }
-}
-function invalidateNoteMedia(note){
-  (note&&note.media||[]).forEach(invalidateMediaURLs);
 }
 
 const $=id=>document.getElementById(id);
@@ -522,10 +496,10 @@ function closeAllRows(){ openRows.forEach(r=>r._reset&&r._reset()); }
 /* ===== NOTE LIST ===== */
 function mediaCell(m){
   if(m.kind==='video') return m.poster
-    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy"><span class="play-badge">▶</span></div>'
+    ? '<div class="m"><img src="'+posterURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🎬\',className:\'ph\'}))"><span class="play-badge">▶</span></div>'
     : '<div class="m"><span class="ph">🎬</span><span class="play-badge">▶</span></div>';
   if(m.kind==='audio') return '<div class="m audio">🎙️</div>';
-  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy"></div>';
+  return '<div class="m"><img src="'+mediaURL(m)+'" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{textContent:\'🖼️\',className:\'ph\'}))"></div>';
 }
 function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
 function showNotes(){
@@ -573,7 +547,6 @@ function renderNotes(){
           ((n.media&&n.media.length)?'<span>📎 '+n.media.length+'</span>':'')+'</div>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
-    bindMediaThumbRecovery(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,6));
     content.addEventListener('click',e=>{ if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; } openEditor(n); });
     wrap.querySelector('.move').addEventListener('click',()=>{ closeAllRows(); openMoveSheet(n); });
     wrap.querySelector('.del').addEventListener('click',async()=>{ await del(NOTES,n.id); notes=notes.filter(x=>x.id!==n.id); renderNotes(); });
@@ -620,7 +593,6 @@ function renderFolders(){
           (media?'<div class="nc-media">'+media+'</div>':'')+
           '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span></div>'+
           '</div></div>';
-        bindMediaThumbRecovery(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,4));
         wrap.querySelector('.swipe-content').addEventListener('click',()=>{ currentFolderId=f.id; showNotes(); setTimeout(()=>openEditor(n),0); });
         grp.appendChild(wrap);
       });
@@ -808,11 +780,7 @@ function openEditor(note){
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
-  closeCamera();
-  // Do not let viewer-used object URLs leak into the note-list thumbnails.
-  // The Blobs stay in IndexedDB; only their disposable URL cache is cleared.
-  if(current) invalidateNoteMedia(current);
-  editor.classList.remove('open'); current=null;
+  closeCamera(); editor.classList.remove('open'); current=null;
   if(view==='notes'){ $('btnNew').style.display='flex'; $('subbar').classList.remove('hidden'); }
   $('btnSave').style.display='none';
   if(!silent && view==='notes') renderNotes();
@@ -826,9 +794,8 @@ function renderEditorMedia(){
     } else {
       const img=document.createElement('img');
       img.src = m.kind==='video' ? (m.poster?posterURL(m):mediaURL(m)) : mediaURL(m);
-      const usePoster = m.kind==='video' && !!m.poster;
-      const srcBlob = usePoster ? m.poster : m.blob;
-      img.addEventListener('error',()=>recoverThumb(img, srcBlob, m, usePoster));
+      const srcBlob = (m.kind==='video' && m.poster) ? m.poster : m.blob;
+      img.addEventListener('error',()=>recoverThumb(img, srcBlob));
       el.appendChild(img);
       if(m.kind==='video'){ const pb=document.createElement('span'); pb.className='play-badge'; pb.textContent='▶'; el.appendChild(pb); }
     }
@@ -939,6 +906,12 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 
 /* ===== VIEWER ===== */
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
+let viewerObjectURL='';
+function releaseViewerObjectURL(){
+  if(!viewerObjectURL)return;
+  const old=viewerObjectURL; viewerObjectURL='';
+  setTimeout(()=>{ try{ URL.revokeObjectURL(old); }catch(e){} },0);
+}
 // Prevent iOS page-level pinch (which, with user-scalable=no, can cause the page
 // to jump/reload) while the viewer is open — the image handles its own zoom.
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
@@ -988,7 +961,10 @@ function setupImageZoom(){
 }
 function renderViewer(){
   if(!current||!current.media||!current.media[viewerIndex])return;
-  const m=current.media[viewerIndex]; const url=mediaURL(m);
+  releaseViewerObjectURL();
+  const m=current.media[viewerIndex];
+  const url=(m&&m.blob)?URL.createObjectURL(m.blob):'';
+  viewerObjectURL=url;
   if(m.kind==='video'){
     vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
     $('vwCtrl').style.display='flex';
@@ -1056,19 +1032,14 @@ function openViewer(i){
 }
 function closeViewer(){
   cancelAnimationFrame(vwRaf);
-  // pause only — do NOT removeAttribute('src')/load(); iOS may invalidate the
-  // shared object URL. After teardown we deliberately forget the cached URL and
-  // rebuild editor thumbnails from the original Blob.
-  const viewed=(current&&current.media&&viewerIndex>=0)?current.media[viewerIndex]:null;
   const vid=document.getElementById('vwVideo');
   if(vid){ try{ vid.pause(); }catch(e){} }
   viewer.classList.remove('open');
   vwMedia.innerHTML='';
+  releaseViewerObjectURL();
   $('vwCtrl').style.display='none';
-  if(viewed) invalidateMediaURLs(viewed);
   viewerIndex=-1;
   try{ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }catch(e){}
-  if(current) renderEditorMedia();
 }
 function viewerStep(d){
   if(!current||!current.media)return;
