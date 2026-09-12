@@ -1,0 +1,31 @@
+name: Fix editor back and pinch v6
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-editor-back-pinch-v6.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch editor back and pinch
+        run: python3 tools/fix_editor_back_pinch_v6.py
+      - name: Check JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text()
+          js=s.split('<script>',1)[1].rsplit('</script>',1)[0]
+          Path('/tmp/app.js').write_text(js)
+          PY
+          node --check /tmp/app.js
+      - name: Commit fix and remove temporary files
+        run: |
+          rm .github/workflows/fix-editor-back-pinch-v6.yml tools/fix_editor_back_pinch_v6.py
+          git config user.name 'chatgpt-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: make editor back reliable and block editor pinch zoom'
+          git push
