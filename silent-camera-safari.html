@@ -127,6 +127,14 @@
   /* while camera + zoom/shutter controls are on screen (bottom-right), keep the
      attachment thumbnails clear of that column so they don't overlap the buttons */
   body.cam-active .ed-attach { padding-right:120px; }
+  .ed-media .m .pick { display:none; position:absolute; left:3px; top:3px; width:20px; height:20px; border-radius:50%; border:2px solid #fff; background:rgba(0,0,0,.45); color:#fff; z-index:4; align-items:center; justify-content:center; font-size:12px; font-weight:800; }
+  .ed-media.media-select-mode .m .pick { display:flex; }
+  .ed-media .m.picked .pick { background:var(--blue); }
+  .ed-media.media-select-mode .m .rm { display:none; }
+  .media-select-bar { display:none; align-items:center; gap:8px; margin:8px 0 0; }
+  .media-select-bar.open { display:flex; }
+  .media-select-bar span { flex:1; font-size:12px; color:var(--sub); }
+  .media-select-bar button { border:none; background:var(--chip); color:var(--blue); border-radius:8px; padding:7px 9px; font-size:12px; font-weight:700; }
   .ed-media .m .rm { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:12px; line-height:18px; z-index:2; touch-action:manipulation; }
   body.shrink-thumb .ed-media .m .rm { width:12px; height:12px; font-size:8px; line-height:12px; }
   .ed-loc { margin-top:16px; }
@@ -308,7 +316,7 @@
         <textarea class="ed-text" id="edText" placeholder="메모를 입력하세요…"></textarea>
         <div class="ed-attach" id="edAttach">
           <div class="ed-attach-label" id="edAttachLabel"><span>첨부</span><button class="attach-export" id="edExport" type="button">내보내기 ↗</button></div>
-          <div class="ed-media" id="edMedia"></div>
+          <div class="ed-media" id="edMedia"></div><div class="media-select-bar" id="mediaSelectBar"><span id="mediaSelectCount">0개 선택</span><button id="mediaSelectAll" type="button">전체 선택</button><button id="mediaSelectExport" type="button">내보내기</button><button id="mediaSelectCancel" type="button">취소</button></div>
           <div class="ed-loc" id="edLoc"></div>
         </div>
       </div>
@@ -512,6 +520,7 @@ const LAST_KEY='lastFolderId', SORT_KEY='sortMode', DARK_KEY='darkMode';
 let sortMode=localStorage.getItem(SORT_KEY)||'updated_desc';
 let searchQuery='';
 let noteSelectMode=false; const selectedNoteIds=new Set();
+let mediaSelectMode=false; const selectedMediaIndexes=new Set();
 
 /* ===== bootstrap ===== */
 async function init(){
@@ -864,7 +873,7 @@ function openEditor(note){
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
-  closeCamera(); editor.classList.remove('open'); current=null;
+  exitMediaSelection(); closeCamera(); editor.classList.remove('open'); current=null;
   if(view==='notes'){ $('btnNew').style.display='flex'; $('subbar').classList.remove('hidden'); }
   $('btnSave').style.display='none';
   if(!silent && view==='notes') renderNotes();
@@ -872,7 +881,8 @@ function closeEditor(silent){
 function renderEditorMedia(){
   const wrap=$('edMedia'); wrap.innerHTML='';
   (current.media||[]).forEach((m,i)=>{
-    const el=document.createElement('div'); el.className='m'+(m.kind==='audio'?' audio':'');
+    const el=document.createElement('div'); el.className='m'+(m.kind==='audio'?' audio':'')+(selectedMediaIndexes.has(i)?' picked':'');
+    const pick=document.createElement('span'); pick.className='pick'; pick.textContent=selectedMediaIndexes.has(i)?'✓':''; el.appendChild(pick);
     if(m.kind==='audio'){
       el.innerHTML='🎙️';
     } else {
@@ -884,7 +894,7 @@ function renderEditorMedia(){
     }
     const rm=document.createElement('button'); rm.className='rm'; rm.dataset.i=i; rm.textContent='×';
     el.appendChild(rm);
-    el.addEventListener('click',e=>{ if(e.target.classList.contains('rm'))return; openViewer(i); });
+    el.addEventListener('click',e=>{ if(e.target.classList.contains('rm'))return; if(mediaSelectMode){e.preventDefault();toggleMediaSelection(i);return;} openViewer(i); });
     wrap.appendChild(el);
   });
   wrap.querySelectorAll('.rm').forEach(b=>{
@@ -893,6 +903,7 @@ function renderEditorMedia(){
     b.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); touched=true; askDelete(); },{passive:false});
     b.addEventListener('click',e=>{ e.stopPropagation(); if(touched){touched=false;return;} askDelete(); });
   });
+  wrap.classList.toggle('media-select-mode',mediaSelectMode); updateMediaSelectionBar();
   updateAttachVisibility();
 }
 function updateAttachVisibility(){
@@ -945,7 +956,15 @@ async function makeZip(entries){ const enc=new TextEncoder(),locals=[],centrals=
 function downloadBlob(blob,name){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(e){}},60000);}
 async function runBatchExport(targetNotes,mode){closeSheet();try{showToast('첨부파일 준비 중…');const entries=await exportFilesForNotes(targetNotes);if(!entries.length){showToast('내보낼 첨부파일이 없습니다');return;}if(mode==='share'){const files=entries.map(e=>new File([e.blob],e.name,{type:e.type}));if(navigator.canShare&&navigator.canShare({files})){try{await navigator.share({files,title:'첨부파일'});return;}catch(e){if(e&&e.name==='AbortError')return;}}const zip=await makeZip(entries),zf=new File([zip],'memo_attachments.zip',{type:'application/zip'});if(navigator.canShare&&navigator.canShare({files:[zf]})){try{await navigator.share({files:[zf],title:'첨부파일'});return;}catch(e){if(e&&e.name==='AbortError')return;}}downloadBlob(zip,'memo_attachments.zip');showToast('ZIP 파일로 저장합니다');return;}const zip=await makeZip(entries);downloadBlob(zip,'memo_attachments.zip');showToast('ZIP 파일로 저장합니다');}catch(e){showToast('내보내기에 실패했습니다');}}
 function openBatchExportSheet(targetNotes){const count=targetNotes.reduce((a,n)=>a+(n.media||[]).length,0);if(!count){showToast('내보낼 첨부파일이 없습니다');return;}sheetHost.innerHTML='<div class="sheet"><div class="sh-title">'+count+'개 첨부파일 내보내기</div><div class="sh-item" id="batchShare">↗ 다른 앱으로 공유</div><div class="sh-item" id="batchZip">↓ ZIP으로 저장</div></div><div class="sh-cancel" id="shCancel">취소</div>';sheetBg.classList.add('open');$('batchShare').addEventListener('click',()=>runBatchExport(targetNotes,'share'));$('batchZip').addEventListener('click',()=>runBatchExport(targetNotes,'zip'));$('shCancel').addEventListener('click',closeSheet);}
-$('edExport').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(current)openBatchExportSheet([current]);});
+function updateMediaSelectionBar(){const bar=$('mediaSelectBar');if(!bar)return;bar.classList.toggle('open',mediaSelectMode);$('mediaSelectCount').textContent=selectedMediaIndexes.size+'개 선택';$('mediaSelectExport').disabled=!selectedMediaIndexes.size;$('mediaSelectAll').textContent=current&&current.media&&selectedMediaIndexes.size===current.media.length?'전체 해제':'전체 선택';}
+function enterMediaSelection(){if(!current||!current.media||!current.media.length)return;mediaSelectMode=true;selectedMediaIndexes.clear();renderEditorMedia();}
+function exitMediaSelection(){mediaSelectMode=false;selectedMediaIndexes.clear();const w=$('edMedia');if(w)w.classList.remove('media-select-mode');const b=$('mediaSelectBar');if(b)b.classList.remove('open');}
+function toggleMediaSelection(i){selectedMediaIndexes.has(i)?selectedMediaIndexes.delete(i):selectedMediaIndexes.add(i);renderEditorMedia();}
+function selectedMediaPseudoNote(){return {title:current&&current.title||'메모',media:(current&&current.media||[]).filter((m,i)=>selectedMediaIndexes.has(i))};}
+$('edExport').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(!current)return;if((current.media||[]).length>1){enterMediaSelection();showToast('내보낼 첨부파일을 선택하세요');}else openBatchExportSheet([current]);});
+$('mediaSelectCancel').addEventListener('click',()=>{exitMediaSelection();renderEditorMedia();});
+$('mediaSelectAll').addEventListener('click',()=>{if(!current)return;if(selectedMediaIndexes.size===current.media.length)selectedMediaIndexes.clear();else current.media.forEach((m,i)=>selectedMediaIndexes.add(i));renderEditorMedia();});
+$('mediaSelectExport').addEventListener('click',()=>{if(!selectedMediaIndexes.size)return;openBatchExportSheet([selectedMediaPseudoNote()]);});
 $('selectionExport').addEventListener('click',()=>openBatchExportSheet(notes.filter(n=>selectedNoteIds.has(n.id))));
 
 /* ===== Location alarm (geofence, Haversine like geotask) ===== */
