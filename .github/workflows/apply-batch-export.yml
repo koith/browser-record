@@ -1,5 +1,6 @@
 name: Apply batch attachment export
 on:
+  push:
   workflow_dispatch:
 jobs:
   patch:
