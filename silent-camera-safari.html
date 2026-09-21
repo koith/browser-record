@@ -299,10 +299,11 @@
   body.browser-home:not(.memo-open) .cam .cam-top button{background:rgba(255,255,255,.72);color:#1c1c1e;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   body.browser-home:not(.memo-open) .zoom-menu{background:rgba(255,255,255,.76);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
   body.browser-home:not(.memo-open) .zoom-readout,body.browser-home:not(.memo-open) .opt-badge{color:#1c1c1e}
-  .cam-opacity{position:absolute;left:5px;right:5px;top:25px;z-index:6;display:none;align-items:center;gap:4px;padding:4px 6px;border-radius:8px;background:rgba(255,255,255,.78);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-  .cam-opacity.open{display:flex}
-  .cam-opacity span{font-size:9px;color:#1c1c1e;font-weight:700}
-  .cam-opacity input{width:100%;min-width:0;height:18px;accent-color:#0a84ff}
+  .cam-opacity{position:fixed;left:14px;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:48;display:none;padding:12px 14px 14px;border-radius:16px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 5px 22px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.9)}
+  .cam-opacity.open{display:block}
+  .cam-opacity-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .cam-opacity-head span,.cam-opacity-head strong{font-size:13px;color:#1c1c1e}
+  .cam-opacity input{display:block;width:100%;height:32px;accent-color:#0a84ff}
 
 </style>
 </head>
@@ -391,7 +392,7 @@
     <!-- CAMERA -->
     <div class="cam" id="cam">
       <div class="cam-top"><button id="camFlip">⟲</button><button id="camClose">✕</button></div>
-      <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div><div class="cam-opacity" id="camOpacity"><span>투명도</span><input id="camOpacitySlider" type="range" min="15" max="100" step="5" value="40"></div>
+      <div class="rec-badge" id="recBadge"><span class="rec-dot"></span><span id="recTime">0:00</span></div>
       <video id="preview" playsinline autoplay muted></video>
     </div>
     <div class="cap-dock" id="capDock">
@@ -399,6 +400,7 @@
       <button class="big" id="bigPhoto"><span class="ic-tri"></span></button>
       <button class="big" id="bigRec"><span class="ic-sq"></span></button>
     </div>
+    <div class="cam-opacity" id="camOpacity"><div class="cam-opacity-head"><span>프리뷰 투명도</span><strong id="camOpacityReadout">40%</strong></div><input id="camOpacitySlider" type="range" min="15" max="100" step="5" value="40"></div>
     <div class="zoom-menu" id="zoomMenu">
       <div class="zoom-readout" id="zoomReadout">1.0×</div>
       <div class="opt-badge" id="zoomBadge"></div>
@@ -1385,14 +1387,14 @@ async function openCamera(){
 
 
 /* Browser camera preview opacity control. Tap preview to show/hide slider. */
-const camOpacity=$('camOpacity'),camOpacitySlider=$('camOpacitySlider');
+const camOpacity=$('camOpacity'),camOpacitySlider=$('camOpacitySlider'),camOpacityReadout=$('camOpacityReadout');
 let camOpacityValue=parseInt(localStorage.getItem('camOpacity')||'40',10);
 if(!Number.isFinite(camOpacityValue))camOpacityValue=40;
 camOpacitySlider.value=String(camOpacityValue);
-function applyCamOpacity(){cam.style.opacity=String(camOpacityValue/100);}
+function applyCamOpacity(){cam.style.opacity=String(camOpacityValue/100);if(camOpacityReadout)camOpacityReadout.textContent=camOpacityValue+'%';}
 applyCamOpacity();
 function toggleCamOpacityFromPreview(e){
-  if(e.target.closest('.cam-top,.cam-opacity'))return;
+  if(e.target.closest('.cam-top'))return;
   if(document.body.classList.contains('browser-home')&&!document.body.classList.contains('memo-open')){
     e.preventDefault();e.stopPropagation();camOpacity.classList.toggle('open');
   }
@@ -1400,9 +1402,9 @@ function toggleCamOpacityFromPreview(e){
 // The entire preview surface is the opacity control trigger. Bind to the camera
 // container (not <video>) because iOS Safari may consume video click events.
 let camPreviewTapMoved=false,camPreviewTapX=0,camPreviewTapY=0;
-cam.addEventListener('touchstart',e=>{if(e.target.closest('.cam-top,.cam-opacity'))return;const t=e.touches[0];camPreviewTapMoved=false;camPreviewTapX=t.clientX;camPreviewTapY=t.clientY;},{passive:true});
+cam.addEventListener('touchstart',e=>{if(e.target.closest('.cam-top'))return;const t=e.touches[0];camPreviewTapMoved=false;camPreviewTapX=t.clientX;camPreviewTapY=t.clientY;},{passive:true});
 cam.addEventListener('touchmove',e=>{if(!e.touches[0])return;const t=e.touches[0];if(Math.hypot(t.clientX-camPreviewTapX,t.clientY-camPreviewTapY)>10)camPreviewTapMoved=true;},{passive:true});
-cam.addEventListener('touchend',e=>{if(camPreviewTapMoved||e.target.closest('.cam-top,.cam-opacity'))return;toggleCamOpacityFromPreview(e);},{passive:false});
+cam.addEventListener('touchend',e=>{if(camPreviewTapMoved||e.target.closest('.cam-top'))return;toggleCamOpacityFromPreview(e);},{passive:false});
 cam.addEventListener('click',e=>{if('ontouchstart' in window)return;toggleCamOpacityFromPreview(e);});
 camOpacitySlider.addEventListener('input',e=>{camOpacityValue=parseInt(e.target.value,10)||40;localStorage.setItem('camOpacity',String(camOpacityValue));applyCamOpacity();});
 camOpacity.addEventListener('click',e=>e.stopPropagation());
