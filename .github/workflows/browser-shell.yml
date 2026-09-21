@@ -1,0 +1,26 @@
+name: Browser first shell
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/add-browser-shell.py
+      - run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text()
+          Path('/tmp/app.js').write_text(s.split('<script>',1)[1].rsplit('</script>',1)[0])
+          PY
+          node --check /tmp/app.js
+      - run: |
+          rm tools/add-browser-shell.py .github/workflows/browser-shell.yml
+          git config user.name chatgpt-bot
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "feat: add browser-first shell with memo overlay"
+          git push
