@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>기록 메모</title>
+<title>메모 브라우저</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   :root { --bg:#f7f6f3; --panel:#fff; --border:#eceae5; --text:#1a1a18; --sub:#9b9890; --blue:#0a84ff; --accent:#c8732e; --red:#d9543b; --green:#2e9e5b; --paper:#fffefb; --chip:#efece6; --chip2:#e3dfd7; }
@@ -239,20 +239,20 @@
   .modal-center .mc-cancel { color:var(--sub); border-right:.5px solid var(--border); }
   .modal-center .mc-yes { color:var(--red); }
   /* login screen — bright, trustworthy bank-app style (fixed, ignores dark mode) */
-  .login { position:fixed; inset:0; background:linear-gradient(180deg,#f4f7fb 0%,#e9eef6 100%); z-index:200; display:none; align-items:center; justify-content:center; padding:28px; }
+  .login { position:fixed; inset:0; background:linear-gradient(160deg,#05070b 0%,#0a1220 58%,#0b2d5c 100%); z-index:200; display:none; align-items:center; justify-content:center; padding:28px; }
   body.locked .login { display:flex; }
   body.locked .header, body.locked .subbar, body.locked .main, body.locked .toolbar { visibility:hidden; }
-  .login-box { width:100%; max-width:330px; display:flex; flex-direction:column; align-items:stretch; gap:14px; background:#ffffff; padding:34px 26px 26px; border-radius:22px; box-shadow:0 18px 50px rgba(30,58,110,.14), 0 2px 8px rgba(30,58,110,.06); }
+  .login-box { width:100%; max-width:330px; display:flex; flex-direction:column; align-items:stretch; gap:14px; background:#0d1118; padding:34px 26px 26px; border:1px solid #17263d; border-radius:22px; box-shadow:0 18px 50px rgba(0,0,0,.5), 0 0 32px rgba(47,111,237,.12); }
   .login-logo { width:60px; height:60px; margin:0 auto 2px; display:flex; align-items:center; justify-content:center; font-size:30px; background:linear-gradient(135deg,#2f6fed,#1e4fc4); border-radius:18px; box-shadow:0 8px 20px rgba(47,111,237,.35); }
-  .login-brand { font-size:21px; font-weight:800; letter-spacing:-.02em; color:#16233a; text-align:center; }
-  .login-sub { font-size:13px; font-weight:500; color:#7a8699; text-align:center; margin-top:-4px; margin-bottom:4px; }
-  .login-pw { width:100%; text-align:center; font-size:17px; letter-spacing:.25em; padding:15px; border:1.5px solid #dbe2ec; background:#f7f9fc; color:#16233a; border-radius:13px; outline:none; -webkit-text-security:disc; text-security:disc; transition:border-color .15s, background .15s; }
-  .login-pw::placeholder { color:#aab4c4; letter-spacing:.02em; font-size:15px; -webkit-text-security:none; text-security:none; }
-  .login-pw:focus { border-color:#2f6fed; background:#fff; }
-  .login-btn { width:100%; padding:15px; border:none; border-radius:13px; background:#2f6fed; color:#fff; font-size:16px; font-weight:700; letter-spacing:.02em; box-shadow:0 8px 18px rgba(47,111,237,.32); transition:background .15s, transform .05s; }
-  .login-btn:active { background:#1e4fc4; transform:scale(.99); }
+  .login-brand { font-size:21px; font-weight:800; letter-spacing:-.02em; color:#f4f8ff; text-align:center; }
+  .login-sub { font-size:13px; font-weight:500; color:#8fa5c4; text-align:center; margin-top:-4px; margin-bottom:4px; }
+  .login-pw { width:100%; text-align:center; font-size:17px; letter-spacing:.25em; padding:15px; border:1.5px solid #243b5e; background:#080c12; color:#f4f8ff; border-radius:13px; outline:none; -webkit-text-security:disc; text-security:disc; transition:border-color .15s, background .15s; }
+  .login-pw::placeholder { color:#7186a3; letter-spacing:.02em; font-size:15px; -webkit-text-security:none; text-security:none; }
+  .login-pw:focus { border-color:#2f80ff; background:#0b1018; }
+  .login-btn { width:100%; padding:15px; border:none; border-radius:13px; background:linear-gradient(135deg,#1478ff,#0755c9); color:#fff; font-size:16px; font-weight:700; letter-spacing:.02em; box-shadow:0 8px 18px rgba(47,111,237,.32); transition:background .15s, transform .05s; }
+  .login-btn:active { background:#0647aa; transform:scale(.99); }
   .login-err { font-size:13px; color:#e0503f; min-height:16px; text-align:center; }
-  .login-foot { font-size:11px; color:#9aa5b5; text-align:center; margin-top:6px; }
+  .login-foot { font-size:11px; color:#60738f; text-align:center; margin-top:6px; }
 
   .toast { position:absolute; bottom:84px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.8); color:#fff; padding:10px 18px; border-radius:980px; font-size:14px; opacity:0; transition:.25s; pointer-events:none; z-index:80; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
@@ -327,7 +327,7 @@
   <div class="login" id="login">
     <div class="login-box">
       <div class="login-logo">📓</div>
-      <div class="login-brand">기록 메모</div>
+      <div class="login-brand">메모 브라우저</div>
       <div class="login-sub">간편 비밀번호를 입력해 주세요</div>
       <input class="login-pw" id="loginPw" type="text" inputmode="numeric" placeholder="비밀번호 입력" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="app-lock-code" data-1p-ignore data-lpignore="true">
       <button class="login-btn" id="loginBtn" type="button">확인</button>
@@ -620,6 +620,22 @@ $('brBack').addEventListener('click',()=>{try{$('browserFrame').contentWindow.hi
 $('brForward').addEventListener('click',()=>{try{$('browserFrame').contentWindow.history.forward();}catch(e){showToast('이 페이지에서는 앞으로가기를 사용할 수 없습니다');}});
 $('brAddress').value=browserURL;
 $('browserFrame').src=browserURL;
+let browserPersistTimer=null;
+function persistBrowserURL(candidate){
+  try{
+    const u=candidate||$('browserFrame').contentWindow.location.href;
+    if(u&&/^https?:\/\//i.test(u)){
+      browserURL=u; localStorage.setItem('browserLastURL',u); $('brAddress').value=u;
+    }
+  }catch(e){}
+}
+$('browserFrame').addEventListener('load',()=>{
+  persistBrowserURL();
+  clearInterval(browserPersistTimer);
+  browserPersistTimer=setInterval(()=>persistBrowserURL(),1200);
+});
+window.addEventListener('pagehide',()=>persistBrowserURL());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)persistBrowserURL();});
 
 /* ===== bootstrap ===== */
 async function init(){
