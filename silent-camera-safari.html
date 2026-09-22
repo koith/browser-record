@@ -1376,6 +1376,36 @@ async function startStream(withVideo){
   }
   if(withVideo)video.srcObject=stream;
 }
+let cameraCaps=null, cameraSettings=null, photoCapture=null, cameraWatchdog=null;
+function inspectCameraCapabilities(){
+  try{
+    const track=stream&&stream.getVideoTracks()[0];
+    if(!track)return null;
+    cameraCaps=track.getCapabilities?track.getCapabilities():{};
+    cameraSettings=track.getSettings?track.getSettings():{};
+    photoCapture=(typeof ImageCapture!=='undefined')?new ImageCapture(track):null;
+    window.__cameraDiagnostics={capabilities:cameraCaps,settings:cameraSettings,constraints:track.getConstraints?track.getConstraints():{},supported:navigator.mediaDevices.getSupportedConstraints?navigator.mediaDevices.getSupportedConstraints():{}};
+    return cameraCaps;
+  }catch(e){cameraCaps={};cameraSettings={};photoCapture=null;return null;}
+}
+function startCameraWatchdog(){
+  clearInterval(cameraWatchdog);
+  let bad=0;
+  cameraWatchdog=setInterval(async()=>{
+    if(!cam.classList.contains('open')||isRecording()||document.hidden)return;
+    const t=stream&&stream.getVideoTracks()[0];
+    const healthy=t&&t.readyState==='live'&&video.videoWidth>0&&video.readyState>=2;
+    bad=healthy?0:bad+1;
+    if(bad>=3){
+      bad=0;
+      try{await startStream(true);inspectCameraCapabilities();applyZoom();}catch(e){}
+    }
+  },1500);
+}
+async function waitForStableFrame(ms=120){
+  if(video.readyState<2) await new Promise(r=>{const done=()=>{video.removeEventListener('loadeddata',done);r()};video.addEventListener('loadeddata',done,{once:true});setTimeout(done,700)});
+  await new Promise(r=>setTimeout(r,ms));
+}
 async function openCamera(){
   if(!current)openEditor(null);
   setMemoOverlay(false);
@@ -1383,6 +1413,8 @@ async function openCamera(){
   cam.classList.add('open'); capDock.classList.add('open'); document.body.classList.add('cam-active'); document.getElementById('btnShrinkCam').style.display='flex';
   try{
     await startStream(true);
+    inspectCameraCapabilities();
+    startCameraWatchdog();
     try{ await detectLenses(); }catch(le){}
     setTimeout(applyZoom,300);
   }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
@@ -1480,6 +1512,18 @@ let hasTele=false, wideLens=null, teleActive=false;
    - between/above -> nearest lens + CSS digital zoom for the remainder */
 async function setZoom(v){
   $('zoomReadout').textContent=v.toFixed(1)+'×';
+  const track=stream&&stream.getVideoTracks()[0];
+  try{
+    const caps=track&&track.getCapabilities?track.getCapabilities():{};
+    if(caps.zoom && Number.isFinite(caps.zoom.min) && Number.isFinite(caps.zoom.max)){
+      const hv=Math.max(caps.zoom.min,Math.min(caps.zoom.max,v));
+      await track.applyConstraints({advanced:[{zoom:hv}]});
+      video.style.transform=''; zoomLevel=1; zoomHardware=true;
+      $('zoomBadge').textContent='카메라 줌';
+      return;
+    }
+  }catch(e){ zoomHardware=false; }
+
   $('zoomBtn').textContent=(Math.round(v*10)%10===0?v.toFixed(0):v.toFixed(1))+'×';
   const EPS=0.05;
   // FRONT camera: never touch rear-lens deviceIds, digital zoom only
@@ -1520,6 +1564,7 @@ function applyDigital(mult){
   else { video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; zoomHardware=false; }
 }
 function closeCamera(){
+  clearInterval(cameraWatchdog);cameraWatchdog=null;
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   try{ video.srcObject=null; }catch(e){}
@@ -1567,19 +1612,33 @@ async function attachMedia(blob,kind,poster,duration){
   await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
   if(kind==='audio') showToast('음성 저장됨');
 }
-function takePhoto(){
+async function takePhoto(){
   if(!stream||!video.videoWidth)return;
-  const s=stream.getVideoTracks()[0].getSettings();
-  const vw=s.width||video.videoWidth, vh=s.height||video.videoHeight;
-  const c=document.createElement('canvas'); c.width=vw; c.height=vh; const ctx=c.getContext('2d');
-  if(!zoomHardware && zoomLevel>1){
-    // software zoom: crop center by zoom factor, then scale to full canvas
-    const sw=vw/zoomLevel, sh=vh/zoomLevel, sx=(vw-sw)/2, sy=(vh-sh)/2;
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, vw, vh);
-  } else {
-    ctx.drawImage(video,0,0,vw,vh);
+  await waitForStableFrame(120);
+  const track=stream.getVideoTracks()[0];
+  // Native photo path first when WebKit exposes ImageCapture and no software crop is required.
+  if(typeof ImageCapture!=='undefined' && (zoomHardware||zoomLevel<=1.001)){
+    try{
+      const ic=new ImageCapture(track);
+      let opts={};
+      try{
+        const pc=await ic.getPhotoCapabilities();
+        if(pc&&pc.imageWidth&&Number.isFinite(pc.imageWidth.max))opts.imageWidth=pc.imageWidth.max;
+        if(pc&&pc.imageHeight&&Number.isFinite(pc.imageHeight.max))opts.imageHeight=pc.imageHeight.max;
+      }catch(e){}
+      const blob=await ic.takePhoto(opts);
+      if(blob&&blob.size){await attachMedia(blob,'photo');return;}
+    }catch(e){}
   }
-  c.toBlob(b=>attachMedia(b,'photo'),'image/jpeg',.92);
+  // Reliable fallback: capture the current video frame, including software zoom crop.
+  const st=track.getSettings?track.getSettings():{};
+  const vw=st.width||video.videoWidth, vh=st.height||video.videoHeight;
+  const c=document.createElement('canvas');c.width=vw;c.height=vh;const ctx=c.getContext('2d');
+  if(!zoomHardware&&zoomLevel>1){
+    const sw=vw/zoomLevel,sh=vh/zoomLevel,sx=(vw-sw)/2,sy=(vh-sh)/2;
+    ctx.drawImage(video,sx,sy,sw,sh,0,0,vw,vh);
+  }else ctx.drawImage(video,0,0,vw,vh);
+  c.toBlob(b=>{if(b)attachMedia(b,'photo')},'image/jpeg',.94);
 }
 function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
 function toggleRec(){
@@ -1604,6 +1663,17 @@ function toggleRec(){
   // timeslice: emit chunks every 1s so data is never lost on short/edge cases
   mediaRecorder.start(1000); startRecUI();
 }
+/* Re-evaluate camera geometry after iPhone rotation without tearing down an active recording. */
+function refreshCameraAfterOrientation(){
+  setTimeout(()=>{
+    if(!stream||!cam.classList.contains('open'))return;
+    inspectCameraCapabilities();
+    if(!isRecording())applyZoom();
+  },250);
+}
+window.addEventListener('orientationchange',refreshCameraAfterOrientation);
+if(screen.orientation&&screen.orientation.addEventListener)screen.orientation.addEventListener('change',refreshCameraAfterOrientation);
+
 /* ===== Screen Wake Lock: keep screen on during capture so auto-sleep
    doesn't interrupt recording. (Manual lock / app backgrounding still
    pauses on iOS — a platform limit no web app can override.) ===== */
