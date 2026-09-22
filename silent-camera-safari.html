@@ -1414,6 +1414,13 @@ camOpacity.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('click',e=>e.stopPropagation());
+// Tap anywhere outside the external opacity panel: persist the current value and close it.
+document.addEventListener('pointerdown',e=>{
+  if(!camOpacity.classList.contains('open'))return;
+  if(camOpacity.contains(e.target))return;
+  localStorage.setItem('camOpacity',String(camOpacityValue));
+  camOpacity.classList.remove('open');
+},{capture:true});
 
 /* ===== Rear lens detection (ultra-wide / wide / tele) ===== */
 let rearLenses=[]; // [{deviceId,label,zoomLabel}]
