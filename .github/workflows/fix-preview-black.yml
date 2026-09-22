@@ -1,0 +1,25 @@
+name: Fix transparent camera preview
+on: [push, workflow_dispatch]
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/fix-preview-black.py
+      - run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('silent-camera-safari.html').read_text()
+          assert 'background:transparent' in s
+          assert 'opacity:1; touch-action:none' in s
+          Path('/tmp/app.js').write_text(s.split('<script>',1)[1].rsplit('</script>',1)[0])
+          PY
+          node --check /tmp/app.js
+      - run: |
+          rm tools/fix-preview-black.py .github/workflows/fix-preview-black.yml
+          git config user.name chatgpt-bot
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: reveal browser behind transparent camera preview"
+          git push
