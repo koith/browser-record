@@ -276,6 +276,7 @@
   body.browser-home:not(.memo-open)>.main>.selection-bar{display:none!important}
   body.browser-home:not(.memo-open)>.main>.cam,
   body.browser-home:not(.memo-open)>.main>.cap-dock,
+  body.browser-home:not(.memo-open)>.main>.cam-opacity,
   body.browser-home:not(.memo-open)>.main>.zoom-menu,
   body.browser-home:not(.memo-open)>.main>.viewer,
   body.browser-home:not(.memo-open)>.main>.sheet-bg,
@@ -303,7 +304,7 @@
   .cam-opacity.open{display:block}
   .cam-opacity-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
   .cam-opacity-head span,.cam-opacity-head strong{font-size:13px;color:#1c1c1e}
-  .cam-opacity input{display:block;width:100%;height:32px;accent-color:#0a84ff}
+  .cam-opacity input{display:block;width:100%;height:38px;accent-color:#0a84ff;pointer-events:auto;touch-action:pan-x}
 
 </style>
 </head>
@@ -1407,6 +1408,9 @@ cam.addEventListener('touchmove',e=>{if(!e.touches[0])return;const t=e.touches[0
 cam.addEventListener('touchend',e=>{if(camPreviewTapMoved||e.target.closest('.cam-top'))return;toggleCamOpacityFromPreview(e);},{passive:false});
 cam.addEventListener('click',e=>{if('ontouchstart' in window)return;toggleCamOpacityFromPreview(e);});
 camOpacitySlider.addEventListener('input',e=>{camOpacityValue=parseInt(e.target.value,10)||40;localStorage.setItem('camOpacity',String(camOpacityValue));applyCamOpacity();});
+camOpacity.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
+camOpacity.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});
+camOpacity.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('click',e=>e.stopPropagation());
 
 /* ===== Rear lens detection (ultra-wide / wide / tele) ===== */
