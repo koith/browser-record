@@ -302,6 +302,8 @@
   body.browser-home:not(.memo-open) .zoom-readout,body.browser-home:not(.memo-open) .opt-badge{color:#1c1c1e}
   .cam-opacity{position:fixed;left:14px;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:48;display:none;padding:12px 14px 14px;border-radius:16px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 5px 22px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.9)}
   .cam-opacity.open{display:block}
+.cam-opacity-backdrop{position:fixed;inset:0;z-index:47;display:none;background:transparent;pointer-events:auto;touch-action:manipulation}
+.cam-opacity-backdrop.open{display:block}
   .cam-opacity-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
   .cam-opacity-head span,.cam-opacity-head strong{font-size:13px;color:#1c1c1e}
   .cam-opacity input{display:block;width:100%;height:44px;accent-color:#0a84ff;pointer-events:auto;touch-action:pan-x;-webkit-appearance:none;appearance:none;background:transparent}
@@ -403,6 +405,7 @@
       <button class="big" id="bigPhoto"><span class="ic-tri"></span></button>
       <button class="big" id="bigRec"><span class="ic-sq"></span></button>
     </div>
+    <div class="cam-opacity-backdrop" id="camOpacityBackdrop"></div>
     <div class="cam-opacity" id="camOpacity"><div class="cam-opacity-head"><span>프리뷰 투명도</span><strong id="camOpacityReadout">40%</strong></div><input id="camOpacitySlider" type="range" min="0" max="100" step="5" value="40"></div>
     <div class="zoom-menu" id="zoomMenu">
       <div class="zoom-readout" id="zoomReadout">1.0×</div>
@@ -1421,21 +1424,28 @@ async function openCamera(){
 }
 
 
-/* Browser camera preview opacity control. Tap preview to show/hide slider. */
-const camOpacity=$('camOpacity'),camOpacitySlider=$('camOpacitySlider'),camOpacityReadout=$('camOpacityReadout');
+/* Browser camera preview opacity control. The transparent backdrop sits above
+   the cross-origin iframe, so taps on the web page can reliably dismiss the panel. */
+const camOpacity=$('camOpacity'),camOpacityBackdrop=$('camOpacityBackdrop'),camOpacitySlider=$('camOpacitySlider'),camOpacityReadout=$('camOpacityReadout');
 let camOpacityValue=parseInt(localStorage.getItem('camOpacity')||'40',10);
 if(!Number.isFinite(camOpacityValue))camOpacityValue=40;
 camOpacitySlider.value=String(camOpacityValue);
-function applyCamOpacity(){cam.style.opacity=String(camOpacityValue/100);if(camOpacityReadout)camOpacityReadout.textContent=camOpacityValue+'%';}
+function applyCamOpacity(){video.style.opacity=String(camOpacityValue/100);if(camOpacityReadout)camOpacityReadout.textContent=camOpacityValue+'%';}
+function openCamOpacity(){
+  camOpacity.classList.add('open');camOpacityBackdrop.classList.add('open');
+}
+function closeCamOpacity(){
+  localStorage.setItem('camOpacity',String(camOpacityValue));
+  camOpacity.classList.remove('open');camOpacityBackdrop.classList.remove('open');
+}
 applyCamOpacity();
 function toggleCamOpacityFromPreview(e){
   if(e.target.closest('.cam-top'))return;
   if(document.body.classList.contains('browser-home')&&!document.body.classList.contains('memo-open')){
-    e.preventDefault();e.stopPropagation();camOpacity.classList.toggle('open');
+    e.preventDefault();e.stopPropagation();
+    if(camOpacity.classList.contains('open'))closeCamOpacity();else openCamOpacity();
   }
 }
-// The entire preview surface is the opacity control trigger. Bind to the camera
-// container (not <video>) because iOS Safari may consume video click events.
 let camPreviewTapMoved=false,camPreviewTapX=0,camPreviewTapY=0;
 cam.addEventListener('touchstart',e=>{if(e.target.closest('.cam-top'))return;const t=e.touches[0];camPreviewTapMoved=false;camPreviewTapX=t.clientX;camPreviewTapY=t.clientY;},{passive:true});
 cam.addEventListener('touchmove',e=>{if(!e.touches[0])return;const t=e.touches[0];if(Math.hypot(t.clientX-camPreviewTapX,t.clientY-camPreviewTapY)>10)camPreviewTapMoved=true;},{passive:true});
@@ -1446,13 +1456,7 @@ camOpacity.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('click',e=>e.stopPropagation());
-// Tap anywhere outside the external opacity panel: persist the current value and close it.
-document.addEventListener('pointerdown',e=>{
-  if(!camOpacity.classList.contains('open'))return;
-  if(camOpacity.contains(e.target))return;
-  localStorage.setItem('camOpacity',String(camOpacityValue));
-  camOpacity.classList.remove('open');
-},{capture:true});
+camOpacityBackdrop.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();closeCamOpacity();},{passive:false});
 
 /* ===== Rear lens detection (ultra-wide / wide / tele) ===== */
 let rearLenses=[]; // [{deviceId,label,zoomLabel}]
@@ -1569,7 +1573,7 @@ function closeCamera(){
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
   try{ video.srcObject=null; }catch(e){}
   video.style.transform=''; $('zoomMenu').classList.remove('open');
-  stream=null; camOpacity.classList.remove('open'); cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
+  stream=null; camOpacity.classList.remove('open'); camOpacityBackdrop.classList.remove('open'); cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
   if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
 async function flipCamera(){
@@ -1692,7 +1696,7 @@ document.addEventListener('visibilitychange',()=>{
     // so iOS drops the green/orange indicator. Active recordings are left alone.
     if(!isRecording() && stream){
       try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){}
-      stream=null; camOpacity.classList.remove('open'); cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
+      stream=null; camOpacity.classList.remove('open'); camOpacityBackdrop.classList.remove('open'); cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
     }
   } else {
     if(isRecording()) acquireWakeLock();
