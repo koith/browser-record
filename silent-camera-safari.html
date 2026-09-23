@@ -300,7 +300,9 @@
   body.browser-home:not(.memo-open) .cam .cam-top button{background:rgba(255,255,255,.72);color:#1c1c1e;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
   body.browser-home:not(.memo-open) .zoom-menu{background:rgba(255,255,255,.76);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
   body.browser-home:not(.memo-open) .zoom-readout,body.browser-home:not(.memo-open) .opt-badge{color:#1c1c1e}
-  .cam-opacity{position:fixed;left:14px;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:48;display:none;padding:12px 14px 14px;border-radius:16px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 5px 22px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.9)}
+  .cam-shrink-float{position:fixed;right:108px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:46;display:none;width:38px;height:38px;border:1px solid rgba(255,255,255,.9);border-radius:50%;background:rgba(255,255,255,.78);color:#1c1c1e;font-size:20px;font-weight:700;box-shadow:0 3px 14px rgba(0,0,0,.16);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);touch-action:manipulation}
+body.browser-home:not(.memo-open).cam-active .cam-shrink-float{display:block}
+.cam-opacity{position:fixed;left:14px;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:48;display:none;padding:12px 14px 14px;border-radius:16px;background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:0 5px 22px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.9)}
   .cam-opacity.open{display:block}
 .cam-opacity-backdrop{position:fixed;inset:0;z-index:47;display:none;background:transparent;pointer-events:auto;touch-action:manipulation}
 .cam-opacity-backdrop.open{display:block}
@@ -405,6 +407,7 @@
       <button class="big" id="bigPhoto"><span class="ic-tri"></span></button>
       <button class="big" id="bigRec"><span class="ic-sq"></span></button>
     </div>
+    <button class="cam-shrink-float" id="camShrinkFloat" type="button" aria-label="프리뷰 크기 전환">↙</button>
     <div class="cam-opacity-backdrop" id="camOpacityBackdrop"></div>
     <div class="cam-opacity" id="camOpacity"><div class="cam-opacity-head"><span>프리뷰 투명도</span><strong id="camOpacityReadout">40%</strong></div><input id="camOpacitySlider" type="range" min="0" max="100" step="5" value="40"></div>
     <div class="zoom-menu" id="zoomMenu">
@@ -1739,7 +1742,15 @@ async function startAudio(){
 bindTap($('capAudio'), ()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
 
 $('btnShrinkThumb').addEventListener('click',()=>{ document.body.classList.toggle('shrink-thumb'); const on=document.body.classList.contains('shrink-thumb'); $('btnShrinkThumb').classList.toggle('on',on); localStorage.setItem('shrinkThumb',on?'1':'0'); });
-$('btnShrinkCam').addEventListener('click',()=>{ document.body.classList.toggle('shrink-cam'); const on=document.body.classList.contains('shrink-cam'); $('btnShrinkCam').classList.toggle('on',on); localStorage.setItem('shrinkCam',on?'1':'0'); });
+function toggleCameraPreviewSize(){
+  document.body.classList.toggle('shrink-cam');
+  const on=document.body.classList.contains('shrink-cam');
+  $('btnShrinkCam').classList.toggle('on',on);
+  const fb=$('camShrinkFloat');if(fb){fb.classList.toggle('on',on);fb.textContent=on?'↗':'↙';}
+  localStorage.setItem('shrinkCam',on?'1':'0');
+}
+$('btnShrinkCam').addEventListener('click',toggleCameraPreviewSize);
+$('camShrinkFloat').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();toggleCameraPreviewSize();});
 
 /* ===== Dark mode ===== */
 function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; localStorage.setItem(DARK_KEY,on?'1':'0'); }
@@ -1779,7 +1790,7 @@ applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
   $('btnShrinkThumb').classList.toggle('on',thumbSmall);
   const sc=localStorage.getItem('shrinkCam')==='1';
   document.body.classList.toggle('shrink-cam',sc);
-  $('btnShrinkCam').classList.toggle('on',sc);
+  $('btnShrinkCam').classList.toggle('on',sc); if($('camShrinkFloat')){$('camShrinkFloat').classList.toggle('on',sc);$('camShrinkFloat').textContent=sc?'↗':'↙';}
 })();
 /* ===== Settings panel ===== */
 const settingsEl=$('settings');
