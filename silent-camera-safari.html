@@ -272,7 +272,7 @@
 .radial-menu.open .radial-action{opacity:1;pointer-events:auto}
 .radial-menu.open #radialCamera{transform:translate(-66px,-6px) scale(1)}
 .radial-menu.open #radialAudio{transform:translate(-48px,-62px) scale(1)}
-.radial-menu{position:fixed;right:0;bottom:0;z-index:18}
+.radial-menu{position:fixed;right:0;bottom:0;z-index:90}
 .mode-toggle{min-width:74px!important;padding:0 8px!important;font-size:12px!important;font-weight:700}
 .mode-toggle .mode-web,.mode-toggle.memo .mode-memo{color:#0a84ff}
 .mode-toggle.memo .mode-web{color:#8e8e93}
@@ -641,8 +641,8 @@ function toggleRadialMenu(){ $('radialMenu').classList.toggle('open'); }
 $('memoFab').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();toggleRadialMenu();});
 $('radialMenu').addEventListener('click',e=>e.stopPropagation());
 document.addEventListener('pointerdown',e=>{if($('radialMenu').classList.contains('open')&&!$('radialMenu').contains(e.target))closeRadialMenu();},{capture:true});
-$('radialCamera').addEventListener('click',async e=>{e.preventDefault();e.stopPropagation();closeRadialMenu();if(!cam.classList.contains('open'))await openCamera();});
-$('radialAudio').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();closeRadialMenu();if(audioRec&&audioRec.state==='recording')audioRec.stop();else startAudio();});
+$('radialCamera').addEventListener('click',async e=>{e.preventDefault();e.stopPropagation();closeRadialMenu();if(cam.classList.contains('open')){showToast('이미 카메라 모드입니다.');return;}await openCamera();});
+$('radialAudio').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();closeRadialMenu();if(audioRec&&audioRec.state==='recording'){audioRec.stop();return;}if(mediaRecorder&&mediaRecorder.state==='recording'){showToast('녹화 중에는 녹음할 수 없습니다.');return;}startAudio();});
 function syncModeToggle(){
   const memo=document.body.classList.contains('memo-open');
   $('modeToggle').classList.toggle('memo',memo);
@@ -1686,6 +1686,7 @@ function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))ret
 function toggleRec(){
   if(!stream)return;
   if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
+  if(audioRec&&audioRec.state==='recording'){ pendingVideoStart=true; audioRec.stop(); return; }
   if(!video.videoWidth){ showToast('카메라 준비 중… 잠시 후 다시 시도'); return; }
   recChunks=[]; let poster=null;
   const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7);
@@ -1759,14 +1760,14 @@ bindTap($('capPhoto'), ()=>{ if(cam.classList.contains('open')) closeCamera(); e
 /* capPhoto handled by bindTap above */
 
 /* audio */
-let audioRec=null,audioChunks=[];
+let audioRec=null,audioChunks=[],pendingVideoStart=false;
 async function startAudio(){
   if(!current)openEditor(null);
   try{ const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
     audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
     const aStart=Date.now();
     audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); };
+    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); if(pendingVideoStart){pendingVideoStart=false;setTimeout(toggleRec,80);} };
     audioRec.start(); acquireWakeLock(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
   }catch(e){ showToast('마이크 오류: '+e.name); }
 }
