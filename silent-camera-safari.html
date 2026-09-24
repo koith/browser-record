@@ -1683,11 +1683,17 @@ async function takePhoto(){
   c.toBlob(b=>{if(b)attachMedia(b,'photo')},'image/jpeg',.94);
 }
 function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
-function toggleRec(){
+async function toggleRec(){
   if(!stream)return;
   if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
   if(audioRec&&audioRec.state==='recording'){ pendingVideoStart=true; audioRec.stop(); return; }
   if(!video.videoWidth){ showToast('카메라 준비 중… 잠시 후 다시 시도'); return; }
+  // Standalone audio recording may have released the camera stream's mic track.
+  // Re-acquire a fresh mic track only when video recording actually starts.
+  if(!stream.getAudioTracks().some(t=>t.readyState==='live')){
+    try{ resetAudioSessionForCapture(); const ms=await navigator.mediaDevices.getUserMedia({audio:true}); const mt=ms.getAudioTracks()[0]; if(mt)stream.addTrack(mt); }
+    catch(e){ showToast('마이크를 사용할 수 없어 영상만 녹화합니다.'); }
+  }
   recChunks=[]; let poster=null;
   const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7);
   // iOS Safari's MediaRecorder often reports mp4 as supported but produces
@@ -1763,11 +1769,17 @@ bindTap($('capPhoto'), ()=>{ if(cam.classList.contains('open')) closeCamera(); e
 let audioRec=null,audioChunks=[],pendingVideoStart=false;
 async function startAudio(){
   if(!current)openEditor(null);
-  try{ const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
+  try{
+    // iOS permits only one reliable mic capture owner here. Camera preview itself
+    // does not need its audio track, so release it before standalone recording.
+    if(stream){ for(const t of stream.getAudioTracks()){ try{t.stop();stream.removeTrack(t);}catch(e){} } }
+    resetAudioSessionForCapture();
+    await new Promise(r=>setTimeout(r,80));
+    const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
     audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
     const aStart=Date.now();
     audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); if(pendingVideoStart){pendingVideoStart=false;setTimeout(toggleRec,80);} };
+    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); audioRec=null; resetAudioSessionForCapture(); if(pendingVideoStart){pendingVideoStart=false;setTimeout(toggleRec,120);} };
     audioRec.start(); acquireWakeLock(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
   }catch(e){ showToast('마이크 오류: '+e.name); }
 }
