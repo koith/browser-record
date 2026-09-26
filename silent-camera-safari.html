@@ -273,9 +273,10 @@
 .radial-menu.open #radialCamera{transform:translate(-66px,-6px) scale(1)}
 .radial-menu.open #radialAudio{transform:translate(-48px,-62px) scale(1)}
 .radial-menu{position:fixed;right:0;bottom:0;z-index:90}
-.mode-toggle{min-width:74px!important;padding:0 8px!important;font-size:12px!important;font-weight:700}
-.mode-toggle .mode-web,.mode-toggle.memo .mode-memo{color:#0a84ff}
-.mode-toggle.memo .mode-web{color:#8e8e93}
+.mode-toggle{width:104px!important;min-width:104px!important;padding:3px!important;height:36px!important;border-radius:10px!important;display:grid!important;grid-template-columns:1fr 1fr;gap:2px;background:#e5e5ea!important;font-size:12px!important;font-weight:700;overflow:hidden}
+.mode-toggle span{height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#6e6e73;background:transparent;transition:background .15s,color .15s,box-shadow .15s;white-space:nowrap}
+.mode-toggle:not(.memo) .mode-web,.mode-toggle.memo .mode-memo{background:#fff;color:#0a84ff;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.mode-toggle:not(.memo) .mode-memo,.mode-toggle.memo .mode-web{color:#8e8e93;box-shadow:none}
 
   body.browser-home:not(.memo-open)>.header,body.browser-home:not(.memo-open)>.subbar,body.browser-home:not(.memo-open)>.toolbar{display:none!important}
   body.browser-home:not(.memo-open)>.main{position:fixed;inset:0;z-index:20;pointer-events:none;background:transparent}
@@ -333,7 +334,7 @@ body.browser-home:not(.memo-open).cam-active .cam-shrink-float{display:block}
       <button id="brForward" aria-label="앞으로">›</button>
       <button id="brReload" aria-label="새로고침">↻</button>
       <input class="browser-address" id="brAddress" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="검색 또는 주소 입력">
-      <button id="modeToggle" class="mode-toggle" type="button"><span class="mode-web">웹</span> / <span class="mode-memo">메모</span></button>
+      <button id="modeToggle" class="mode-toggle" type="button"><span class="mode-web">웹</span><span class="mode-memo">메모</span></button>
       <button id="brExternal" aria-label="Safari에서 열기">↗</button>
     </div>
     <div class="browser-stage">
