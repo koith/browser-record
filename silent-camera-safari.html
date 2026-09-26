@@ -273,10 +273,12 @@
 .radial-menu.open #radialCamera{transform:translate(-66px,-6px) scale(1)}
 .radial-menu.open #radialAudio{transform:translate(-48px,-62px) scale(1)}
 .radial-menu{position:fixed;right:0;bottom:0;z-index:90}
-.mode-toggle{width:104px!important;min-width:104px!important;padding:3px!important;height:36px!important;border-radius:10px!important;display:grid!important;grid-template-columns:1fr 1fr;gap:2px;background:#e5e5ea!important;font-size:12px!important;font-weight:700;overflow:hidden}
-.mode-toggle span{height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:#6e6e73;background:transparent;transition:background .15s,color .15s,box-shadow .15s;white-space:nowrap}
-.mode-toggle:not(.memo) .mode-web,.mode-toggle.memo .mode-memo{background:#fff;color:#0a84ff;box-shadow:0 1px 4px rgba(0,0,0,.18)}
-.mode-toggle:not(.memo) .mode-memo,.mode-toggle.memo .mode-web{color:#8e8e93;box-shadow:none}
+.mode-toggle{width:96px!important;min-width:96px!important;padding:0 8px!important;height:36px!important;border-radius:999px!important;display:flex!important;align-items:center;justify-content:space-between;gap:6px;background:#e5e5ea!important;font-size:11px!important;font-weight:700;position:relative;overflow:hidden;color:#6e6e73!important}
+.mode-toggle::before{content:'';position:absolute;left:5px;top:5px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.22);transition:transform .18s ease}
+.mode-toggle.memo::before{transform:translateX(60px)}
+.mode-toggle span{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:34px;height:30px;white-space:nowrap;color:#8e8e93;transition:color .15s}
+.mode-toggle:not(.memo) .mode-web,.mode-toggle.memo .mode-memo{color:#0a84ff}
+.mode-toggle:not(.memo) .mode-memo,.mode-toggle.memo .mode-web{color:#8e8e93}
 
   body.browser-home:not(.memo-open)>.header,body.browser-home:not(.memo-open)>.subbar,body.browser-home:not(.memo-open)>.toolbar{display:none!important}
   body.browser-home:not(.memo-open)>.main{position:fixed;inset:0;z-index:20;pointer-events:none;background:transparent}
