@@ -1,0 +1,10 @@
+{
+  "name": "memo-browser",
+  "private": true,
+  "scripts": {
+    "test": "node tests/stability.cjs && node tests/playback.cjs && node tests/export.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

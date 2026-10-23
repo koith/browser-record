@@ -354,7 +354,7 @@ body.browser-home:not(.memo-open).cam-active .cam-shrink-float{display:block}
     <div class="login-box">
       <div class="login-logo">📓</div>
       <div class="login-brand">메모 브라우저</div>
-      <div class="login-sub">v0.2</div>
+      <div class="login-sub">v0.3 · 안정성 개선</div>
       <input class="login-pw" id="loginPw" type="text" inputmode="numeric" placeholder="비밀번호 입력" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="app-lock-code" data-1p-ignore data-lpignore="true">
       <button class="login-btn" id="loginBtn" type="button">확인</button>
       <div class="login-err" id="loginErr"></div>
@@ -517,13 +517,20 @@ body.browser-home:not(.memo-open).cam-active .cam-shrink-float{display:block}
 
 <script>
 /* ===== IndexedDB (v2: notes + folders) ===== */
-const DB_NAME='memoDB', NOTES='notes', FOLDERS='folders'; let db;
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,2);
+// Preferences are optional; blocked browser storage must not stop app startup.
+const preferences={
+  getItem(key){try{return localStorage.getItem(key);}catch(e){return null;}},
+  setItem(key,value){try{localStorage.setItem(key,value);}catch(e){}}
+};
+const DB_NAME='memoDB', NOTES='notes', FOLDERS='folders', CAPTURE_SESSIONS='captureSessions', CAPTURE_CHUNKS='captureChunks'; let db;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,3);
   r.onupgradeneeded=e=>{const d=e.target.result;
     if(!d.objectStoreNames.contains(NOTES))d.createObjectStore(NOTES,{keyPath:'id'});
     if(!d.objectStoreNames.contains(FOLDERS))d.createObjectStore(FOLDERS,{keyPath:'id'});
+    if(!d.objectStoreNames.contains(CAPTURE_SESSIONS))d.createObjectStore(CAPTURE_SESSIONS,{keyPath:'id'});
+    if(!d.objectStoreNames.contains(CAPTURE_CHUNKS))d.createObjectStore(CAPTURE_CHUNKS,{keyPath:'id'});
   };
-  r.onsuccess=e=>{db=e.target.result;res(db);}; r.onerror=e=>rej(e.target.error);});}
+  r.onsuccess=e=>{db=e.target.result;db.onversionchange=()=>{db.close();showToast('앱이 업데이트되었습니다. 새로고침해 주세요');};res(db);}; r.onerror=e=>rej(e.target.error);r.onblocked=()=>showToast('다른 탭의 메모 브라우저를 닫고 다시 시도해 주세요');});}
 function st(store,m){return db.transaction(store,m).objectStore(store);}
 function cleanForSave(v){
   if(!v)return v;
@@ -537,61 +544,47 @@ function cleanForSave(v){
   }
   return copy;
 }
-function put(store,v){return new Promise((res,rej)=>{const r=st(store,'readwrite').put(store===NOTES?cleanForSave(v):v);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
-function del(store,id){return new Promise((res,rej)=>{const r=st(store,'readwrite').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error);});}
-function getAll(store){return new Promise((res,rej)=>{const r=st(store,'readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
-
-/* ===== blob URL cache (attach url onto the media/blob to survive DB re-reads) ===== */
-const urlCache=new WeakMap();
-function blobURL(b){ if(!b)return''; if(urlCache.has(b))return urlCache.get(b); const u=URL.createObjectURL(b); urlCache.set(b,u); return u; }
-function mediaURL(m){ if(!m||!m.blob)return''; if(m._url)return m._url; m._url=blobURL(m.blob); return m._url; }
-function posterURL(m){ if(!m||!m.poster)return''; if(m._purl)return m._purl; m._purl=blobURL(m.poster); return m._purl; }
-// If an <img> thumbnail fails (e.g. its object URL was invalidated), mint a brand
-// new URL straight from the blob and retry once.
-function recoverThumb(imgEl, blob){
-  try{
-    if(!blob){ return; }
-    urlCache.delete(blob);
-    const u=URL.createObjectURL(blob);
-    urlCache.set(blob,u);
-    if(!imgEl.dataset.recovered){ imgEl.dataset.recovered='1'; imgEl.src=u; }
-  }catch(e){}
+function put(store,v){
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(store,'readwrite');
+    tx.objectStore(store).put(store===NOTES?cleanForSave(v):v);
+    tx.oncomplete=()=>resolve();
+    tx.onabort=tx.onerror=()=>reject(tx.error||new Error('저장 실패'));
+  });
 }
+function del(store,id){return new Promise((resolve,reject)=>{
+  const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(id);
+  tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error||new Error('삭제 실패'));
+});}
+function getAll(store,range){return new Promise((res,rej)=>{const r=st(store,'readonly').getAll(range);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
 
-// iOS Safari may poison a Blob backing store after <video> consumes it.
-// Cache only the source BYTES from IndexedDB once. Every UI surface receives a
-// physically separate Blob built from a copied ArrayBuffer, so thumbnails/editor/viewer
-// never share a Blob backing store with playback.
-const mediaBytesCache=new WeakMap();
-async function mediaBytes(blob){
-  if(!blob || typeof blob.arrayBuffer!=='function') throw new Error('invalid blob');
-  let pending=mediaBytesCache.get(blob);
-  if(!pending){
-    pending=(async()=>({buf:await blob.arrayBuffer(),type:blob.type||'application/octet-stream'}))();
-    mediaBytesCache.set(blob,pending);
+// Thumbnail URLs belong to their DOM nodes, never to the lifetime of a note.
+function releaseThumb(img){
+  if(img._thumbURL){URL.revokeObjectURL(img._thumbURL);img._thumbURL='';}
+}
+new MutationObserver(records=>{
+  for(const record of records)for(const node of record.removedNodes){
+    if(node.nodeType!==1||node.isConnected)continue;
+    if(node.matches('img'))releaseThumb(node);
+    node.querySelectorAll('img').forEach(img=>{if(!img.isConnected)releaseThumb(img);});
   }
-  try{ return await pending; }
-  catch(e){ mediaBytesCache.delete(blob); throw e; }
+}).observe(document.body,{childList:true,subtree:true});
+function isolatedBlobURL(blob){
+  if(!blob || typeof blob.slice!=='function')throw new Error('invalid blob');
+  return URL.createObjectURL(blob.slice(0,blob.size,blob.type));
 }
-async function isolatedBlobURL(blob){
-  const src=await mediaBytes(blob);
-  const fresh=new Blob([src.buf.slice(0)],{type:src.type});
-  return URL.createObjectURL(fresh);
-}
-async function hydrateImgFromBlob(img, blob, fallback){
+function hydrateImgFromBlob(img,blob,fallback){
   if(!img)return;
+  const failed=()=>{
+    releaseThumb(img);
+    const ph=document.createElement('span');ph.className='ph';ph.textContent=fallback||'🖼️';
+    if(img.parentNode)img.replaceWith(ph);
+  };
   try{
-    const u=await isolatedBlobURL(blob);
-    if(!img.isConnected)return;
-    img.src=u;
-    img.onerror=()=>{
-      const ph=document.createElement('span'); ph.className='ph'; ph.textContent=fallback||'🖼️';
-      if(img.isConnected)img.replaceWith(ph);
-    };
-  }catch(e){
-    const ph=document.createElement('span'); ph.className='ph'; ph.textContent=fallback||'🖼️';
-    if(img.isConnected)img.replaceWith(ph);
-  }
+    img.loading='lazy';img.decoding='async';
+    img.onerror=failed;
+    img._thumbURL=isolatedBlobURL(blob);img.src=img._thumbURL;
+  }catch(e){failed();}
 }
 function hydrateMediaThumbs(root, mediaItems){
   if(!root)return;
@@ -606,13 +599,16 @@ function hydrateMediaThumbs(root, mediaItems){
 }
 
 const $=id=>document.getElementById(id);
+function newId(prefix){return prefix+'_'+(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'_'+Math.random().toString(36).slice(2));}
+function escapeHTML(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const listEl=$('list'), emptyEl=$('empty'), folderListEl=$('folderList'), editor=$('editor'), cam=$('cam'), capDock=$('capDock');
 const toast=$('toast'); let toastTimer;
 function showToast(m){toast.textContent=m;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2000);}
 
 let folders=[], notes=[], currentFolderId=null, current=null, view='notes';
 const LAST_KEY='lastFolderId', SORT_KEY='sortMode', DARK_KEY='darkMode';
-let sortMode=localStorage.getItem(SORT_KEY)||'updated_desc';
+let sortMode=preferences.getItem(SORT_KEY)||'updated_desc';
+if(!['updated_desc','updated_asc','created_desc','created_asc','title_asc','title_desc'].includes(sortMode))sortMode='updated_desc';
 let searchQuery='';
 let noteSelectMode=false; const selectedNoteIds=new Set();
 let mediaSelectMode=false; const selectedMediaIndexes=new Set();
@@ -620,7 +616,7 @@ let mediaSelectMode=false; const selectedMediaIndexes=new Set();
 
 /* ===== Browser-first shell ===== */
 const BR_HOME='https://www.google.com/webhp?igu=1';
-let browserURL=localStorage.getItem('browserLastURL')||BR_HOME;
+let browserURL=preferences.getItem('browserLastURL')||BR_HOME;
 function normalizeBrowserInput(raw){
   const v=(raw||'').trim();
   if(!v)return browserURL||BR_HOME;
@@ -630,14 +626,14 @@ function normalizeBrowserInput(raw){
 }
 function browserNavigate(raw){
   browserURL=normalizeBrowserInput(raw);
-  localStorage.setItem('browserLastURL',browserURL);
+  preferences.setItem('browserLastURL',browserURL);
   $('brAddress').value=browserURL;
   $('browserFrame').src=browserURL;
   const h=$('browserHelp');h.classList.add('show');clearTimeout(h._t);h._t=setTimeout(()=>h.classList.remove('show'),3500);
 }
 function setMemoOverlay(open){
   document.body.classList.toggle('memo-open',!!open);
-  if(open){ if(typeof renderNotes==='function'&&view==='notes')renderNotes(); }
+  if(open){if(typeof renderNotes==='function'&&view==='notes'&&!editor.classList.contains('open'))renderNotes();}
 }
 function closeRadialMenu(){ $('radialMenu').classList.remove('open'); }
 function toggleRadialMenu(){ $('radialMenu').classList.toggle('open'); }
@@ -651,14 +647,16 @@ function syncModeToggle(){
   $('modeToggle').classList.toggle('memo',memo);
   $('modeToggle').setAttribute('aria-label',memo?'웹 모드로 전환':'메모 모드로 전환');
 }
+async function switchToWeb(){
+  try{await saveCurrent();setMemoOverlay(false);closeRadialMenu();syncModeToggle();}
+  catch(e){reportSaveError();}
+}
 $('modeToggle').addEventListener('click',()=>{
-  const memo=document.body.classList.contains('memo-open');
-  if(memo){if(current&&editor.classList.contains('open'))saveCurrent();setMemoOverlay(false);}
-  else setMemoOverlay(true);
-  closeRadialMenu();syncModeToggle();
+  if(document.body.classList.contains('memo-open'))switchToWeb();
+  else{setMemoOverlay(true);closeRadialMenu();syncModeToggle();}
 });
 syncModeToggle();
-$('memoBrowserClose').addEventListener('click',()=>{ if(current&&editor.classList.contains('open')) saveCurrent(); setMemoOverlay(false); syncModeToggle(); });
+$('memoBrowserClose').addEventListener('click',switchToWeb);
 $('brAddress').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();browserNavigate(e.target.value);e.target.blur();}});
 $('brReload').addEventListener('click',()=>{try{$('browserFrame').src=browserURL;}catch(e){}});
 $('brExternal').addEventListener('click',()=>{window.open(browserURL,'_blank');});
@@ -671,16 +669,16 @@ function persistBrowserURL(candidate){
   try{
     const u=candidate||$('browserFrame').contentWindow.location.href;
     if(u&&/^https?:\/\//i.test(u)){
-      browserURL=u; localStorage.setItem('browserLastURL',u); $('brAddress').value=u;
+      browserURL=u; preferences.setItem('browserLastURL',u); $('brAddress').value=u;
     }
   }catch(e){}
 }
 // Cross-origin iframe locations (Google and most external sites) are intentionally
 // unreadable from the parent page. Do not poll contentWindow.location: on iOS Safari
 // this can destabilize otherwise frameable pages. We persist only URLs the shell knows.
-$('browserFrame').addEventListener('load',()=>{ localStorage.setItem('browserLastURL',browserURL); });
-window.addEventListener('pagehide',()=>localStorage.setItem('browserLastURL',browserURL));
-document.addEventListener('visibilitychange',()=>{if(document.hidden)localStorage.setItem('browserLastURL',browserURL);});
+$('browserFrame').addEventListener('load',()=>{ preferences.setItem('browserLastURL',browserURL); });
+window.addEventListener('pagehide',()=>preferences.setItem('browserLastURL',browserURL));
+document.addEventListener('visibilitychange',()=>{if(document.hidden)preferences.setItem('browserLastURL',browserURL);});
 
 /* ===== bootstrap ===== */
 async function init(){
@@ -696,7 +694,8 @@ async function init(){
   let migrated=false;
   for(const n of notes){ if(!n.folderId){ n.folderId=folders[0].id; await put(NOTES,n); migrated=true; } }
   if(migrated) notes=await getAll(NOTES);
-  const last=localStorage.getItem(LAST_KEY);
+  await recoverCaptures();
+  const last=preferences.getItem(LAST_KEY);
   currentFolderId = (last && folders.some(f=>f.id===last)) ? last : folders[0].id;
   showNotes();
   ensureGeoWatch();
@@ -742,7 +741,7 @@ function mediaCell(m){
 }
 function currentFolder(){ return folders.find(f=>f.id===currentFolderId)||folders[0]; }
 function showNotes(){
-  view='notes'; closeEditor(true);
+  view='notes'; closeEditor(true);folderListEl.querySelectorAll('.swipe-wrap,.folder-group').forEach(n=>n.remove());
   exitNoteSelection(false);
   folderListEl.style.display='none'; listEl.style.display='block';
   $('subbar').classList.remove('hidden'); $('sortBtn').style.display='block'; $('selectBtn').style.display='block';
@@ -750,7 +749,7 @@ function showNotes(){
   $('settingsBtn').style.display='none';
   $('title').textContent=currentFolder().name;
   $('btnNew').style.display='flex'; $('btnNewFolder').style.display='none';
-  localStorage.setItem(LAST_KEY,currentFolderId);
+  preferences.setItem(LAST_KEY,currentFolderId);
   renderNotes();
 }
 function sortNotes(arr){
@@ -781,7 +780,7 @@ function renderNotes(){
       '<div class="swipe-actions"><button class="move">이동</button><button class="del">삭제</button></div>'+
       '<div class="swipe-content"><div class="note-card">'+
         '<span class="note-select'+(selectedNoteIds.has(n.id)?' checked':'')+'" data-id="'+n.id+'">'+(selectedNoteIds.has(n.id)?'✓':'')+'</span>'+
-        '<div class="note-main"><div class="nc-title">'+(n.title||'(제목 없음)')+'</div>'+
+        '<div class="note-main"><div class="nc-title">'+escapeHTML(n.title||'(제목 없음)')+'</div>'+
         (n.text?'<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>':'')+
         (media?'<div class="nc-media">'+media+'</div>':'')+
         '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span>'+
@@ -791,7 +790,7 @@ function renderNotes(){
     hydrateMediaThumbs(wrap.querySelector('.nc-media'),(n.media||[]).slice(0,6));
     content.addEventListener('click',e=>{ if(noteSelectMode){e.preventDefault();toggleNoteSelection(n.id);return;} if(content.style.transform&&content.style.transform!=='translateX(0px)'&&content.style.transform!==''){ closeAllRows(); return; } openEditor(n); });
     wrap.querySelector('.move').addEventListener('click',()=>{ closeAllRows(); openMoveSheet(n); });
-    wrap.querySelector('.del').addEventListener('click',async()=>{ await del(NOTES,n.id); notes=notes.filter(x=>x.id!==n.id); renderNotes(); });
+    wrap.querySelector('.del').addEventListener('click',async()=>{try{await finishCaptures();await del(NOTES,n.id);notes=notes.filter(x=>x.id!==n.id);renderNotes();}catch(e){reportSaveError();}});
     attachSwipe(content,144); openRows.push(content);
     listEl.appendChild(wrap);
   }
@@ -809,7 +808,7 @@ $('selectionAll').addEventListener('click',()=>{const v=visibleNotesForSelection
 
 /* ===== FOLDER LIST ===== */
 function showFolders(){
-  view='folders'; closeEditor(true); closeCamera();
+  view='folders'; closeEditor(true);closeCamera();listEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());
   listEl.style.display='none'; folderListEl.style.display='block'; editor.classList.remove('open');
   $('subbar').classList.remove('hidden'); $('sortBtn').style.display='none'; $('selectBtn').style.display='none';
   $('searchInput').placeholder='모든 폴더 검색';
@@ -835,12 +834,12 @@ function renderFolders(){
       const fnotes=sortNotes(matches.filter(n=>n.folderId===f.id));
       if(!fnotes.length)return;
       const grp=document.createElement('div'); grp.className='folder-group';
-      grp.innerHTML='<div class="group-head">📁 '+f.name+' <span>'+fnotes.length+'</span></div>';
+      grp.innerHTML='<div class="group-head">📁 '+escapeHTML(f.name)+' <span>'+fnotes.length+'</span></div>';
       fnotes.forEach(n=>{
         const wrap=document.createElement('div'); wrap.className='swipe-wrap';
         const media=(n.media||[]).slice(0,4).map(mediaCell).join('');
         wrap.innerHTML='<div class="swipe-content"><div class="note-card">'+
-          '<div class="nc-title">'+(n.title||'(제목 없음)')+'</div>'+
+          '<div class="nc-title">'+escapeHTML(n.title||'(제목 없음)')+'</div>'+
           (n.text?'<div class="nc-preview">'+n.text.replace(/</g,'&lt;')+'</div>':'')+
           (media?'<div class="nc-media">'+media+'</div>':'')+
           '<div class="nc-meta"><span>'+new Date(n.updated).toLocaleString('ko-KR')+'</span></div>'+
@@ -863,7 +862,7 @@ function renderFolders(){
     wrap.innerHTML=
       '<div class="swipe-actions"><button class="edit">이름변경</button><button class="del">삭제</button></div>'+
       '<div class="swipe-content"><div class="folder-row">'+
-        '<div class="f-left"><span class="f-icon">📁</span><div><div class="f-name">'+f.name+'</div><div class="f-count">'+cnt+'개</div></div></div>'+
+        '<div class="f-left"><span class="f-icon">📁</span><div><div class="f-name">'+escapeHTML(f.name)+'</div><div class="f-count">'+cnt+'개</div></div></div>'+
         '<span class="f-handle" aria-label="순서 변경">≡</span>'+
       '</div></div>';
     const content=wrap.querySelector('.swipe-content');
@@ -972,6 +971,7 @@ async function deleteFolder(f){
   if(folders.length<=1){ showToast('마지막 폴더는 삭제할 수 없습니다'); return; }
   const cnt=notes.filter(n=>n.folderId===f.id).length;
   if(!confirm('폴더 "'+f.name+'"'+(cnt?' 및 메모 '+cnt+'개':'')+'를 삭제할까요?'))return;
+  await finishCaptures();
   for(const n of notes.filter(x=>x.folderId===f.id)){ await del(NOTES,n.id); }
   notes=notes.filter(n=>n.folderId!==f.id);
   await del(FOLDERS,f.id); folders=folders.filter(x=>x.id!==f.id);
@@ -981,7 +981,7 @@ async function deleteFolder(f){
 async function newFolder(){
   const name=prompt('새 폴더 이름','');
   if(name===null)return; const nm=name.trim(); if(!nm)return;
-  const f={id:'f_'+Date.now(),name:nm,created:Date.now(),order:folders.length};
+  const f={id:newId('f'),name:nm,created:Date.now(),order:folders.length};
   await put(FOLDERS,f); folders.push(f); renderFolders();
 }
 $('folderBtn').addEventListener('click',()=>{ if(view==='folders')showNotes(); else showFolders(); });
@@ -989,7 +989,7 @@ $('btnNewFolder').addEventListener('click',newFolder);
 
 /* ===== SHEET (move picker) ===== */
 const sheetBg=$('sheetBg'), sheetHost=$('sheetHost');
-function closeSheet(){ sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }
+function closeSheet(){ exportSheetSeq++;sheetBg.classList.remove('open'); sheetHost.innerHTML=''; }
 function showConfirm(msg, onYes, yesLabel){
   const html='<div class="modal-center"><div class="mc-box">'+
     '<div class="mc-msg">'+msg+'</div>'+
@@ -998,15 +998,15 @@ function showConfirm(msg, onYes, yesLabel){
       '<button class="mc-yes" id="cfYes">'+(yesLabel||'삭제')+'</button>'+
     '</div></div></div>';
   sheetHost.innerHTML=html; sheetBg.classList.add('open');
-  $('cfYes').addEventListener('click',()=>{ closeSheet(); onYes&&onYes(); });
+  $('cfYes').addEventListener('click',()=>{closeSheet();try{Promise.resolve(onYes&&onYes()).catch(reportSaveError);}catch(e){reportSaveError();}});
   $('cfNo').addEventListener('click',closeSheet);
 }
 sheetBg.addEventListener('click',e=>{ if(e.target===sheetBg)closeSheet(); });
 function openMoveSheet(note){
   const others=folders.filter(f=>f.id!==note.folderId);
-  let html='<div class="sheet"><div class="sh-title">"'+(note.title||'메모')+'" 이동할 폴더</div>';
+  let html='<div class="sheet"><div class="sh-title">"'+escapeHTML(note.title||'메모')+'" 이동할 폴더</div>';
   if(!others.length) html+='<div class="sh-item" style="color:var(--sub)">다른 폴더가 없습니다</div>';
-  others.forEach(f=>{ html+='<div class="sh-item" data-id="'+f.id+'">📁 '+f.name+'</div>'; });
+  others.forEach(f=>{ html+='<div class="sh-item" data-id="'+f.id+'">📁 '+escapeHTML(f.name)+'</div>'; });
   html+='</div><div class="sh-cancel" id="shCancel">취소</div>';
   sheetHost.innerHTML=html; sheetBg.classList.add('open');
   sheetHost.querySelectorAll('.sh-item[data-id]').forEach(el=>el.addEventListener('click',async()=>{
@@ -1025,7 +1025,9 @@ function updateDeleteBtn(){
   $('edDelete').style.display = has ? 'block' : 'none';
 }
 function openEditor(note){
-  current=note||{id:'n_'+Date.now(),title:'',text:'',media:[],folderId:currentFolderId,created:Date.now(),updated:Date.now()};
+  listEl.querySelectorAll('.swipe-wrap').forEach(n=>n.remove());openRows=[];
+  if(current&&current!==note){persistDraft().catch(reportSaveError);closeCamera();if(audioRec&&audioRec.state==='recording')audioRec.stop();audioStartSeq++;}
+  current=note||{id:newId('n'),title:'',text:'',media:[],folderId:currentFolderId,created:Date.now(),updated:Date.now()};
   $('edTitle').value=current.title||''; $('edText').value=current.text||'';
   renderEditorMedia(); editor.classList.add('open');
   $('subbar').classList.add('hidden');
@@ -1033,6 +1035,11 @@ function openEditor(note){
   $('btnNew').style.display='none'; $('btnNewFolder').style.display='none'; $('btnSave').style.display='flex';
 }
 function closeEditor(silent){
+  clearTimeout(draftTimer);persistDraft().catch(reportSaveError);
+  if(audioRec&&audioRec.state==='recording')audioRec.stop();
+  audioStartSeq++;
+  if(viewer.classList.contains('open'))closeViewer();
+  $('edMedia').innerHTML='';
   exitMediaSelection(); closeCamera(); editor.classList.remove('open'); current=null;
   if(view==='notes'){ $('btnNew').style.display='flex'; $('subbar').classList.remove('hidden'); }
   $('btnSave').style.display='none';
@@ -1047,7 +1054,7 @@ function renderEditorMedia(){
       el.innerHTML='🎙️';
     } else {
       const img=document.createElement('img');
-      const srcBlob = (m.kind==='video' && m.poster) ? m.poster : m.blob;
+      const srcBlob = m.kind==='video' ? m.poster : m.blob;
       el.appendChild(img);
       hydrateImgFromBlob(img,srcBlob,m.kind==='video'?'🎬':'🖼️');
       if(m.kind==='video'){ const pb=document.createElement('span'); pb.className='play-badge'; pb.textContent='▶'; el.appendChild(pb); }
@@ -1075,13 +1082,32 @@ function updateAttachVisibility(){
   $('edExport').style.display=hasMedia?'block':'none';
   if(typeof updateDeleteBtn==='function')updateDeleteBtn();
 }
+let draftTimer=null;
+function captureDraft(note=current){
+  if(note&&note===current){note.title=$('edTitle').value.trim();note.text=$('edText').value;note.updated=Date.now();}
+  return note;
+}
+function rememberNote(note){
+  const index=notes.findIndex(n=>n.id===note.id);
+  if(index<0)notes.push(note);else notes[index]=note;
+}
+async function persistDraft(note=current){
+  captureDraft(note);
+  if(!note||(!note.title&&!note.text&&!(note.media||[]).length&&!note.loc))return;
+  await put(NOTES,note);rememberNote(note);
+}
+function scheduleDraft(){
+  captureDraft();clearTimeout(draftTimer);
+  const note=current;
+  draftTimer=setTimeout(()=>persistDraft(note).catch(reportSaveError),700);
+}
+function reportSaveError(){showToast('저장하지 못했습니다. 기기 저장 공간을 확인하고 다시 시도해 주세요');}
 async function saveCurrent(){
-  if(!current)return;
-  current.title=$('edTitle').value.trim(); current.text=$('edText').value; current.updated=Date.now();
-  if(!current.title&&!current.text&&(!current.media||!current.media.length)){ closeEditor(); return; }
-  await put(NOTES,current);
-  if(!notes.some(n=>n.id===current.id))notes.push(current);
-  showToast('저장되었습니다'); closeEditor();
+  const note=captureDraft();if(!note)return;
+  clearTimeout(draftTimer);
+  await finishCaptures();
+  await persistDraft(note);
+  if(current===note){showToast('저장되었습니다');closeEditor();}
 }
 // iOS Safari can consume the first tap only to dismiss the keyboard.
 // Use the same touch-safe tap binding as the capture controls so Back always fires.
@@ -1095,7 +1121,7 @@ async function returnToNoteList(){
   }catch(e){showToast('메모를 저장하지 못했습니다. 다시 시도해 주세요');}
 }
 bindTap($('edBack'), returnToNoteList);
-$('btnSave').addEventListener('click',saveCurrent);
+$('btnSave').addEventListener('click',()=>saveCurrent().catch(reportSaveError));
 
 // Block Safari page pinch globally at capture phase. The dedicated attachment image
 // viewer still implements its own pinch transform on #vwImg; native page zoom is never used.
@@ -1109,19 +1135,60 @@ document.addEventListener('touchmove',e=>{
     if(!img) e.preventDefault();
   }
 },{passive:false,capture:true});
-$('edTitle').addEventListener('input',updateDeleteBtn);
-$('edText').addEventListener('input',updateDeleteBtn);
-$('edDelete').addEventListener('click',async()=>{ if(current&&current.id){ await del(NOTES,current.id); notes=notes.filter(n=>n.id!==current.id);} closeEditor(); });
+$('edTitle').addEventListener('input',()=>{updateDeleteBtn();scheduleDraft();});
+$('edText').addEventListener('input',()=>{updateDeleteBtn();scheduleDraft();});
+$('edDelete').addEventListener('click',async()=>{
+  const target=current;if(!target)return;
+  try{clearTimeout(draftTimer);await finishCaptures();await del(NOTES,target.id);notes=notes.filter(n=>n.id!==target.id);if(current===target){current=null;closeEditor();}}
+  catch(e){reportSaveError();}
+});
 $('btnNew').addEventListener('click',()=>openEditor(null));
 
 
 /* ===== Attachment batch export / share ===== */
 function safeFilePart(v){ return (v||'메모').replace(/[\\/:*?"<>|]/g,'_').replace(/\s+/g,' ').trim().slice(0,60)||'메모'; }
 function mediaExt(m){ const t=(m&&m.blob&&m.blob.type)||''; if(m.kind==='video')return t.includes('mp4')?'mp4':t.includes('quicktime')?'mov':'webm'; if(m.kind==='audio')return t.includes('mp4')?'m4a':t.includes('mpeg')?'mp3':t.includes('wav')?'wav':'webm'; return t.includes('png')?'png':t.includes('heic')?'heic':t.includes('webp')?'webp':'jpg'; }
-async function exportFilesForNotes(targetNotes){ const out=[]; for(const n of targetNotes){ const title=safeFilePart(n.title||'메모'); let i=0; for(const m of (n.media||[])){ if(!m||!m.blob)continue; i++; const src=await mediaBytes(m.blob); const blob=new Blob([src.buf.slice(0)],{type:src.type}); const kind=m.kind==='video'?'video':m.kind==='audio'?'audio':'photo'; out.push({name:title+'_'+String(i).padStart(2,'0')+'_'+kind+'.'+mediaExt(m),blob,type:blob.type||'application/octet-stream'}); } } return out; }
+async function exportFilesForNotes(targetNotes){
+  const out=[],names=new Set();
+  for(const n of targetNotes){
+    const title=safeFilePart(n.title||'메모');let i=0;
+    for(const m of (n.media||[])){
+      if(!m||!m.blob)continue;i++;
+      const blob=m.blob.slice(0,m.blob.size,m.blob.type),kind=m.kind==='video'?'video':m.kind==='audio'?'audio':'photo';
+      const base=title+'_'+String(i).padStart(2,'0')+'_'+kind;let name=base+'.'+mediaExt(m),suffix=1;
+      while(names.has(name))name=base+'_'+(++suffix)+'.'+mediaExt(m);names.add(name);
+      out.push({name,blob,type:blob.type||'application/octet-stream'});
+    }
+  }
+  return out;
+}
 function crc32(bytes){ let c=0xffffffff; for(let i=0;i<bytes.length;i++){c^=bytes[i];for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0);} return (c^0xffffffff)>>>0; }
 function u16(n){return[n&255,(n>>>8)&255];} function u32(n){return[n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255];}
-async function makeZip(entries){ const enc=new TextEncoder(),locals=[],centrals=[];let offset=0; for(const e of entries){const name=enc.encode(e.name),data=new Uint8Array(await e.blob.arrayBuffer()),crc=crc32(data);const local=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0),...name]);locals.push(local,data);const central=new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset),...name]);centrals.push(central);offset+=local.length+data.length;} const cs=centrals.reduce((a,b)=>a+b.length,0),end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(entries.length),...u16(entries.length),...u32(cs),...u32(offset),...u16(0)]);return new Blob([...locals,...centrals,end],{type:'application/zip'}); }
+async function blobCRC(blob,isCancelled=()=>false){
+  let crc=0xffffffff;
+  for(let offset=0;offset<blob.size;offset+=1024*1024){
+    if(isCancelled())throw new DOMException('Cancelled','AbortError');
+    const bytes=new Uint8Array(await blob.slice(offset,offset+1024*1024).arrayBuffer());
+    for(const byte of bytes){crc^=byte;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  return (crc^0xffffffff)>>>0;
+}
+async function makeZip(entries,isCancelled=()=>false){
+  const enc=new TextEncoder(),locals=[],centrals=[];let offset=0;
+  if(entries.length>65535)throw new Error('ZIP 파일 수 제한');
+  for(const e of entries){
+    if(isCancelled())throw new DOMException('Cancelled','AbortError');
+    const name=enc.encode(e.name),size=e.blob.size,crc=await blobCRC(e.blob,isCancelled);
+    if(offset+size+name.length+30>0xffffffff)throw new Error('ZIP 크기 제한');
+    const local=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(size),...u32(size),...u16(name.length),...u16(0),...name]);
+    locals.push(local,e.blob);
+    centrals.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(size),...u32(size),...u16(name.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset),...name]));
+    offset+=local.length+size;
+  }
+  const cs=centrals.reduce((a,b)=>a+b.length,0),end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(entries.length),...u16(entries.length),...u32(cs),...u32(offset),...u16(0)]);
+  return new Blob([...locals,...centrals,end],{type:'application/zip'});
+}
 function downloadBlob(blob,name){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(u);}catch(e){}},60000);}
 // Prepare bytes before enabling actions: Safari requires share() in the tap itself.
 let exportSheetSeq=0;
@@ -1129,19 +1196,19 @@ function canShareFiles(files){
   try{return !!(navigator.share&&navigator.canShare&&navigator.canShare({files}));}
   catch(e){return false;}
 }
-async function openBatchExportSheet(targetNotes){
+async function openBatchExportSheet(targetNotes,preparedEntries){
   const seq=++exportSheetSeq;
   sheetHost.innerHTML='<div class="sheet"><div class="sh-title" id="exportStatus">첨부파일 준비 중…</div><button class="sh-item" id="batchShare" type="button" disabled>↗ 다른 앱으로 공유</button><button class="sh-item" id="batchZip" type="button" disabled>↓ 저장</button></div><div class="sh-cancel" id="shCancel">취소</div>';
   sheetBg.classList.add('open');
   const status=$('exportStatus'),share=$('batchShare'),save=$('batchZip');
   $('shCancel').addEventListener('click',closeSheet);
   try{
-    const entries=await exportFilesForNotes(targetNotes);
+    const entries=preparedEntries||await exportFilesForNotes(targetNotes);
     if(seq!==exportSheetSeq||!status.isConnected)return;
     if(!entries.length)throw new Error('내보낼 첨부파일이 없습니다');
     const files=entries.map(e=>new File([e.blob],e.name,{type:e.type}));
     // A single attachment keeps its original format; multiple attachments use ZIP.
-    const output=entries.length===1?entries[0]:{blob:await makeZip(entries),name:'memo_attachments.zip',type:'application/zip'};
+    const output=entries.length===1?entries[0]:{blob:await makeZip(entries,()=>seq!==exportSheetSeq||!status.isConnected),name:'memo_attachments.zip',type:'application/zip'};
     if(seq!==exportSheetSeq||!status.isConnected)return;
     const zipFiles=entries.length===1?files:[new File([output.blob],output.name,{type:output.type})];
     const shareFiles=canShareFiles(files)?files:canShareFiles(zipFiles)?zipFiles:null;
@@ -1198,11 +1265,11 @@ $('edLocBtn').addEventListener('click',()=>{
   if(!navigator.geolocation){ showToast('이 기기는 위치를 지원하지 않습니다'); return; }
   maybeAskNotify();
   showToast('현재 위치 확인 중…');
+  const target=current;
   navigator.geolocation.getCurrentPosition(pos=>{
-    current.loc={ lat:pos.coords.latitude, lng:pos.coords.longitude, enabled:true, lastInside:false };
-    current.updated=Date.now(); put(NOTES,current);
-    if(!notes.some(n=>n.id===current.id))notes.push(current);
-    renderLocAlarm(); ensureGeoWatch();
+    target.loc={ lat:pos.coords.latitude, lng:pos.coords.longitude, enabled:true, lastInside:false };
+    target.updated=Date.now();put(NOTES,target).then(()=>rememberNote(target)).catch(reportSaveError);
+    if(current===target)renderLocAlarm();ensureGeoWatch();
     showToast('현재 좌표를 첨부했습니다');
   },err=>{ showToast('위치 오류: '+err.message); },{enableHighAccuracy:true,timeout:10000});
 });
@@ -1246,11 +1313,16 @@ function maybeAskNotify(){ if('Notification' in window && Notification.permissio
 let viewerIndex=-1; const viewer=$('viewer'), vwMedia=$('vwMedia');
 let viewerObjectURL='';
 let viewerLoadSeq=0;
+let viewerControlsAbort=null;
 function releaseViewerObjectURL(){
-  // Deliberately do NOT revoke blob URLs on iOS Safari.
-  // Revoking a viewer URL has repeatedly invalidated thumbnail/playback URLs
-  // backed by the same IndexedDB Blob. We only drop our reference here.
-  viewerObjectURL='';
+  cancelAnimationFrame(vwRaf);
+  if(viewerControlsAbort){viewerControlsAbort.abort();viewerControlsAbort=null;}
+  // Detach the decoder before revoking the URL owned by this viewer.
+  vwMedia.querySelectorAll('video,audio').forEach(el=>{
+    try{el.pause();el.removeAttribute('src');el.load();}catch(e){}
+  });
+  vwMedia.innerHTML='';
+  if(viewerObjectURL){URL.revokeObjectURL(viewerObjectURL);viewerObjectURL='';}
 }
 // Prevent iOS page-level pinch (which, with user-scalable=no, can cause the page
 // to jump/reload) while the viewer is open — the image handles its own zoom.
@@ -1306,12 +1378,12 @@ async function renderViewer(){
   vwMedia.innerHTML='';
   const m=current.media[viewerIndex];
   let url='';
-  try{ url=await isolatedBlobURL(m&&m.blob); }
+  try{ url=isolatedBlobURL(m&&m.blob); }
   catch(e){ if(seq===viewerLoadSeq) showToast('첨부파일을 읽지 못했습니다'); return; }
-  if(seq!==viewerLoadSeq)return;
+  if(seq!==viewerLoadSeq){URL.revokeObjectURL(url);return;}
   viewerObjectURL=url;
   if(m.kind==='video'){
-    vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline></video>';
+    vwMedia.innerHTML='<video id="vwVideo" src="'+url+'" playsinline preload="metadata"></video>';
     $('vwCtrl').style.display='flex';
     setupVideoControls(m.duration||0);
   } else if(m.kind==='audio'){
@@ -1331,47 +1403,49 @@ async function renderViewer(){
 }
 let vwRaf=0;
 function setupVideoControls(storedDur){
+  viewerControlsAbort=new AbortController();
+  const signal=viewerControlsAbort.signal;
   const v=$('vwVideo'), play=$('vwPlay'), seek=$('vwSeek'), cur=$('vwCur'), dur=$('vwDur');
-  let seeking=false, realDur=0, fixing=false;
+  let seeking=false, realDur=0;
+  play.textContent='▶';seek.value=0;seek.max=1;seek.disabled=true;
+  cur.textContent='0:00';dur.textContent='--:--';
   function setDur(d){
-    if(isFinite(d)&&d>0){ realDur=d; dur.textContent=fmtTime(d); seek.max=d; seek.step=Math.max(0.05, d/1000); }
+    if(isFinite(d)&&d>0){realDur=d;dur.textContent=fmtTime(d);seek.max=d;seek.step=Math.max(0.05,d/1000);seek.disabled=false;}
   }
-  if(storedDur&&isFinite(storedDur)&&storedDur>0){ setDur(storedDur); }
-  function resolveDuration(){
-    if(isFinite(v.duration)&&v.duration>0){ setDur(v.duration); return; }
-    if(realDur>0) return;
-    fixing=true;
-    const onSeeked=()=>{ v.removeEventListener('seeked',onSeeked); setDur(v.duration); try{ v.currentTime=0; }catch(e){} fixing=false; };
-    v.addEventListener('seeked',onSeeked);
-    try{ v.currentTime=1e9; }catch(e){ fixing=false; }
-  }
-  v.addEventListener('loadedmetadata',resolveDuration);
-  v.addEventListener('durationchange',()=>{ if(!fixing && isFinite(v.duration)&&v.duration>0) setDur(v.duration); });
+  if(storedDur&&isFinite(storedDur)&&storedDur>0)setDur(storedDur);
+  // Some recordings have unknown duration. Never force a seek to 1e9: that
+  // can scan an entire recording before the user even starts playback.
+  function resolveDuration(){if(isFinite(v.duration)&&v.duration>0)setDur(v.duration);}
+  v.addEventListener('error',()=>{if(!signal.aborted)showToast('이 영상을 재생할 수 없습니다. 원본 파일로 저장해 확인해 주세요');},{signal});
+  v.addEventListener('loadedmetadata',resolveDuration,{signal});
+  v.addEventListener('durationchange',()=>{ if(isFinite(v.duration)&&v.duration>0) setDur(v.duration); },{signal});
   function paint(){
-    if(!document.getElementById('vwVideo')){ cancelAnimationFrame(vwRaf); return; } // video gone -> stop loop
-    if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); }
+    if(signal.aborted||document.getElementById('vwVideo')!==v){ cancelAnimationFrame(vwRaf); return; } // video gone -> stop loop
+    if(!seeking){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); }
     vwRaf=requestAnimationFrame(paint);
   }
-  v.addEventListener('play',()=>{ play.textContent='❚❚'; cancelAnimationFrame(vwRaf); paint(); });
-  v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); });
-  v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); });
-  v.addEventListener('timeupdate',()=>{ if(!seeking&&!fixing){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } });
+  v.addEventListener('play',()=>{ play.textContent='❚❚'; cancelAnimationFrame(vwRaf); paint(); },{signal});
+  v.addEventListener('pause',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); },{signal});
+  v.addEventListener('ended',()=>{ play.textContent='▶'; cancelAnimationFrame(vwRaf); },{signal});
+  v.addEventListener('timeupdate',()=>{ if(!seeking){ const t=v.currentTime||0; if(realDur>0)seek.value=Math.min(t,realDur); cur.textContent=fmtTime(t); } },{signal});
   let lastToggle=0;
-  function togglePlay(){ const now=Date.now(); if(now-lastToggle<300)return; lastToggle=now; if(v.paused){ setPlaybackAudioSession(); v.play(); } else v.pause(); }
-  play.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
-  v.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); });
+  function togglePlay(){ const now=Date.now(); if(now-lastToggle<300)return; lastToggle=now; if(v.paused){ setPlaybackAudioSession(); const pending=v.play(); if(pending)pending.catch(()=>{if(!signal.aborted){play.textContent='▶';showToast('영상을 재생하지 못했습니다. 원본 파일로 저장해 확인해 주세요');}}); } else v.pause(); }
+  play.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); },{signal});
+  v.addEventListener('click',e=>{ e.stopPropagation(); togglePlay(); },{signal});
   const startSeek=()=>{ if(realDur>0)seeking=true; };
   const doSeek=()=>{ if(seeking)cur.textContent=fmtTime(parseFloat(seek.value)); };
   const endSeek=()=>{ if(!seeking)return; const t=parseFloat(seek.value); if(isFinite(t)){ try{ v.currentTime=t; }catch(e){} } seeking=false; };
-  seek.addEventListener('input',doSeek);
-  seek.addEventListener('pointerdown',startSeek);
-  seek.addEventListener('touchstart',startSeek,{passive:true});
-  seek.addEventListener('change',endSeek);
-  seek.addEventListener('pointerup',endSeek);
-  seek.addEventListener('touchend',endSeek);
+  seek.addEventListener('input',doSeek,{signal});
+  seek.addEventListener('pointerdown',startSeek,{signal});
+  seek.addEventListener('touchstart',startSeek,{passive:true,signal});
+  seek.addEventListener('change',endSeek,{signal});
+  seek.addEventListener('pointerup',endSeek,{signal});
+  seek.addEventListener('touchend',endSeek,{signal});
 }
 function openViewer(i){
   if(!current||!current.media||!current.media[i])return;
+  if(isRecording()){showToast('녹화·녹음을 종료한 뒤 재생해 주세요');return;}
+  if(stream)closeCamera();
   setPlaybackAudioSession();
   viewerIndex=i; renderViewer(); viewer.classList.add('open');
 }
@@ -1381,7 +1455,6 @@ function closeViewer(){
   const vid=document.getElementById('vwVideo');
   if(vid){ try{ vid.pause(); }catch(e){} }
   viewer.classList.remove('open');
-  vwMedia.innerHTML='';
   releaseViewerObjectURL();
   $('vwCtrl').style.display='none';
   viewerIndex=-1;
@@ -1429,9 +1502,62 @@ $('vwSave').addEventListener('click',()=>{
 });
 
 /* ===== CAMERA ===== */
-let stream=null, facing='environment', mediaRecorder=null, recChunks=[], recTimer=null, recStart=0;
+let stream=null, facing='environment', mediaRecorder=null, recTimer=null, recStart=0;
 const video=$('preview'), bigPhoto=$('bigPhoto'), bigRec=$('bigRec'), recBadge=$('recBadge'), recTime=$('recTime');
-let currentDeviceId=null;
+let currentDeviceId=null,cameraRequestSeq=0,videoStarting=false,audioStarting=false,audioStartSeq=0;
+let videoFinish=null,audioFinish=null;
+function captureRange(id){return IDBKeyRange.bound(id+':',id+':\uffff');}
+async function deleteCapture(session){
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction([CAPTURE_SESSIONS,CAPTURE_CHUNKS],'readwrite');
+    tx.objectStore(CAPTURE_SESSIONS).delete(session.id);
+    tx.objectStore(CAPTURE_CHUNKS).delete(captureRange(session.id));
+    tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(tx.error);
+  });
+}
+async function completeCapture(session,target){
+  const chunks=await getAll(CAPTURE_CHUNKS,captureRange(session.id));
+  if(chunks.length){
+    const blob=new Blob(chunks.map(c=>c.blob),{type:session.type});
+    await attachMedia(blob,session.kind,session.poster,session.duration||Math.max(0,((chunks[chunks.length-1].capturedAt||session.started)-session.started)/1000),target,session.id);
+  }
+  await deleteCapture(session);
+}
+async function beginCapture(recorder,target,kind,poster){
+  captureDraft(target);await put(NOTES,target);rememberNote(target);
+  const session={id:newId('r'),noteId:target.id,kind,type:recorder.mimeType||'',started:Date.now(),poster};
+  await put(CAPTURE_SESSIONS,session);
+  let pending=Promise.resolve(),writeError=null,index=0;
+  return {
+    append(blob){
+      if(!blob||!blob.size||writeError)return;
+      const id=session.id+':'+String(index++).padStart(10,'0'),capturedAt=Date.now();
+      pending=pending.then(()=>put(CAPTURE_CHUNKS,{id,blob,capturedAt})).catch(e=>{
+        writeError=e;reportSaveError();if(recorder.state!=='inactive')recorder.stop();
+      });
+    },
+    async finish(duration,poster){
+      await pending;if(writeError)throw writeError;
+      session.duration=duration;if(poster)session.poster=poster;
+      await put(CAPTURE_SESSIONS,session);await completeCapture(session,target);
+    }
+  };
+}
+async function recoverCaptures(){
+  const sessions=await getAll(CAPTURE_SESSIONS);let recovered=0;
+  for(const session of sessions){
+    const target=notes.find(n=>n.id===session.noteId);
+    if(!target){await deleteCapture(session);continue;}
+    try{await completeCapture(session,target);recovered++;}catch(e){reportSaveError();}
+  }
+  if(recovered)showToast('중단된 녹화·녹음을 복구했습니다');
+}
+async function finishCaptures(){
+  pendingVideoStart=false;
+  if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
+  if(audioRec&&audioRec.state==='recording')audioRec.stop();
+  await Promise.all([videoFinish,audioFinish]);
+}
 function resetAudioSessionForCapture(){
   // Before requesting the mic again, clear any 'playback' session we set for the
   // viewer, otherwise iOS can throw InvalidStateError on getUserMedia(audio).
@@ -1439,8 +1565,10 @@ function resetAudioSessionForCapture(){
   try{ if(navigator.mediaSession && navigator.mediaSession.setAudioSessionType){ navigator.mediaSession.setAudioSessionType('auto'); } }catch(e){}
 }
 async function startStream(withVideo){
+  if(isRecording())return false;
+  const request=++cameraRequestSeq;
   if(stream)stream.getTracks().forEach(t=>t.stop());
-  let vcon;
+  let acquired,vcon;
   if(withVideo){
     vcon = currentDeviceId
       ? { deviceId:{exact:currentDeviceId}, width:{ideal:1920}, height:{ideal:1080} }
@@ -1448,20 +1576,25 @@ async function startStream(withVideo){
   }
   if(withVideo) resetAudioSessionForCapture();
   try{
-    stream=await navigator.mediaDevices.getUserMedia(withVideo?{video:vcon,audio:true}:{audio:true});
+    acquired=await navigator.mediaDevices.getUserMedia(withVideo?{video:vcon,audio:true}:{audio:true});
   }catch(err){
+    if(request!==cameraRequestSeq)return false;
     if(withVideo){
       // deviceId exact may fail -> fall back to facingMode; also drop audio if needed
       try{
         const fb = currentDeviceId ? {facingMode:facing,width:{ideal:1920},height:{ideal:1080}} : vcon;
         currentDeviceId=null;
-        stream=await navigator.mediaDevices.getUserMedia({video:fb,audio:true});
+        acquired=await navigator.mediaDevices.getUserMedia({video:fb,audio:true});
       }catch(err2){
-        stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing}});
+        if(request!==cameraRequestSeq)return false;
+        acquired=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing}});
       }
     } else { throw err; }
   }
-  if(withVideo)video.srcObject=stream;
+  if(request!==cameraRequestSeq||document.hidden||!cam.classList.contains('open')){acquired.getTracks().forEach(t=>t.stop());return false;}
+  stream=acquired;
+  if(withVideo){video.srcObject=stream;const track=stream.getVideoTracks()[0];if(track&&track.getSettings)currentDeviceId=track.getSettings().deviceId||currentDeviceId;}
+  return true;
 }
 let cameraCaps=null, cameraSettings=null, photoCapture=null, cameraWatchdog=null;
 function inspectCameraCapabilities(){
@@ -1477,15 +1610,15 @@ function inspectCameraCapabilities(){
 }
 function startCameraWatchdog(){
   clearInterval(cameraWatchdog);
-  let bad=0;
+  let bad=0,busy=false;
   cameraWatchdog=setInterval(async()=>{
-    if(!cam.classList.contains('open')||isRecording()||document.hidden)return;
+    if(busy||!cam.classList.contains('open')||isRecording()||document.hidden)return;
     const t=stream&&stream.getVideoTracks()[0];
     const healthy=t&&t.readyState==='live'&&video.videoWidth>0&&video.readyState>=2;
     bad=healthy?0:bad+1;
     if(bad>=3){
       bad=0;
-      try{await startStream(true);inspectCameraCapabilities();applyZoom();}catch(e){}
+      busy=true;try{if(await startStream(true)){inspectCameraCapabilities();applyZoom();}}catch(e){}finally{busy=false;}
     }
   },1500);
 }
@@ -1498,20 +1631,21 @@ async function openCamera(){
   setMemoOverlay(false);
   cam.style.left=''; cam.style.top=''; cam.style.right=''; cam.style.bottom='';
   cam.classList.add('open'); capDock.classList.add('open'); document.body.classList.add('cam-active'); document.getElementById('btnShrinkCam').style.display='flex';
+  const opening=cameraRequestSeq+1;
   try{
-    await startStream(true);
+    if(!await startStream(true))return;
     inspectCameraCapabilities();
     startCameraWatchdog();
     try{ await detectLenses(); }catch(le){}
     setTimeout(applyZoom,300);
-  }catch(e){ showToast('카메라 오류: '+e.name); closeCamera(); }
+  }catch(e){if(opening===cameraRequestSeq){showToast('카메라 오류: '+e.name);closeCamera();}}
 }
 
 
 /* Browser camera preview opacity control. The transparent backdrop sits above
    the cross-origin iframe, so taps on the web page can reliably dismiss the panel. */
 const camOpacity=$('camOpacity'),camOpacityBackdrop=$('camOpacityBackdrop'),camOpacitySlider=$('camOpacitySlider'),camOpacityReadout=$('camOpacityReadout');
-let camOpacityValue=parseInt(localStorage.getItem('camOpacity')||'40',10);
+let camOpacityValue=parseInt(preferences.getItem('camOpacity')||'40',10);
 if(!Number.isFinite(camOpacityValue))camOpacityValue=40;
 camOpacitySlider.value=String(camOpacityValue);
 function applyCamOpacity(){video.style.opacity=String(camOpacityValue/100);if(camOpacityReadout)camOpacityReadout.textContent=camOpacityValue+'%';}
@@ -1519,7 +1653,7 @@ function openCamOpacity(){
   camOpacity.classList.add('open');camOpacityBackdrop.classList.add('open');
 }
 function closeCamOpacity(){
-  localStorage.setItem('camOpacity',String(camOpacityValue));
+  preferences.setItem('camOpacity',String(camOpacityValue));
   camOpacity.classList.remove('open');camOpacityBackdrop.classList.remove('open');
 }
 applyCamOpacity();
@@ -1535,7 +1669,7 @@ cam.addEventListener('touchstart',e=>{if(e.target.closest('.cam-top'))return;con
 cam.addEventListener('touchmove',e=>{if(!e.touches[0])return;const t=e.touches[0];if(Math.hypot(t.clientX-camPreviewTapX,t.clientY-camPreviewTapY)>10)camPreviewTapMoved=true;},{passive:true});
 cam.addEventListener('touchend',e=>{if(camPreviewTapMoved||e.target.closest('.cam-top'))return;toggleCamOpacityFromPreview(e);},{passive:false});
 cam.addEventListener('click',e=>{if('ontouchstart' in window)return;toggleCamOpacityFromPreview(e);});
-camOpacitySlider.addEventListener('input',e=>{camOpacityValue=parseInt(e.target.value,10);if(!Number.isFinite(camOpacityValue))camOpacityValue=40;localStorage.setItem('camOpacity',String(camOpacityValue));applyCamOpacity();});
+camOpacitySlider.addEventListener('input',e=>{camOpacityValue=parseInt(e.target.value,10);if(!Number.isFinite(camOpacityValue))camOpacityValue=40;preferences.setItem('camOpacity',String(camOpacityValue));applyCamOpacity();});
 camOpacity.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchmove',e=>e.stopPropagation(),{passive:true});
 camOpacity.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
@@ -1553,7 +1687,7 @@ function classifyLens(label){
 }
 async function detectLenses(){
   rearLenses=[];
-  if(facing!=='environment'){ buildZoomMenu(); return; }
+  if(facing!=='environment'){await buildZoomMenu();return;}
   try{
     // query twice: labels are only populated after permission is granted
     let devs=await navigator.mediaDevices.enumerateDevices();
@@ -1576,9 +1710,9 @@ async function detectLenses(){
     const ord={'.5×':0,'1×':1,'2×':2};
     rearLenses.sort((a,b)=>(ord[a.zoomLabel]??9)-(ord[b.zoomLabel]??9));
   }catch(e){}
-  buildZoomMenu();
+  await buildZoomMenu();
 }
-function buildZoomMenu(){
+async function buildZoomMenu(){
   // configure slider range based on available rear lenses
   const slider=$('zoomSlider'), flip=$('zoomFlip');
   const teleLens = rearLenses.find(l=>l.zoomLabel==='2×');
@@ -1591,7 +1725,7 @@ function buildZoomMenu(){
   if(parseFloat(slider.value)>parseFloat(slider.max)) slider.value=slider.max;
   flip.textContent = facing==='environment' ? '🤳' : '📷';
   // apply current slider value
-  setZoom(parseFloat(slider.value));
+  await setZoom(parseFloat(slider.value));
 }
 let hasTele=false, wideLens=null, teleActive=false;
 /* Core: map a slider value to lens choice + digital multiplier.
@@ -1639,6 +1773,7 @@ async function setZoom(v){
   }
 }
 async function ensureLens(lens){
+  if(isRecording())return;
   if(!lens){ return; }
   if(currentDeviceId===lens.deviceId) return;
   const prev=currentDeviceId;
@@ -1652,6 +1787,8 @@ function applyDigital(mult){
   else { video.style.transform='scale('+zoomLevel+')'; video.style.transformOrigin='center center'; zoomHardware=false; }
 }
 function closeCamera(){
+  cameraRequestSeq++;
+  photoCapture=null;cameraCaps=null;cameraSettings=null;
   clearInterval(cameraWatchdog);cameraWatchdog=null;
   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
   if(stream){ stream.getTracks().forEach(t=>t.stop()); }
@@ -1661,6 +1798,7 @@ function closeCamera(){
   if(typeof setPlaybackAudioSession==='function') setPlaybackAudioSession();
 }
 async function flipCamera(){
+  if(isRecording()){showToast('녹화를 종료한 뒤 카메라를 전환해 주세요');return;}
   facing=facing==='environment'?'user':'environment';
   currentDeviceId=null; zoomLevel=1;
   $('zoomSlider').value='1';
@@ -1694,15 +1832,26 @@ function refreshZoomMenu(){ /* slider UI: nothing to toggle */ }
   cam.addEventListener('mousedown',down); addEventListener('mousemove',move); addEventListener('mouseup',up);
 })();
 
-async function attachMedia(blob,kind,poster,duration){
-  if(!current)openEditor(null);
-  current.media=current.media||[]; const item={kind,blob}; if(poster)item.poster=poster; if(duration&&isFinite(duration)&&duration>0)item.duration=duration; current.media.push(item); current.updated=Date.now();
-  await put(NOTES,current); if(!notes.some(n=>n.id===current.id))notes.push(current); renderEditorMedia();
-  if(kind==='audio') showToast('음성 저장됨');
+async function attachMedia(blob,kind,poster,duration,target=current,recordingId){
+  if(!target||!blob||!blob.size)return;
+  captureDraft(target);
+  if(recordingId&&(target.media||[]).some(m=>m.recordingId===recordingId))return;
+  const item={kind,blob};if(recordingId)item.recordingId=recordingId;if(poster)item.poster=poster;if(duration&&isFinite(duration)&&duration>0)item.duration=duration;
+  target.media=target.media||[];target.media.push(item);target.updated=Date.now();
+  try{await put(NOTES,target);rememberNote(target);}
+  catch(e){reportSaveError();throw e;}
+  if(current===target)renderEditorMedia();
+  if(kind==='audio')showToast('음성 저장됨');
 }
+let photoBusy=false;
 async function takePhoto(){
-  if(!stream||!video.videoWidth)return;
+  if(photoBusy||!stream||!video.videoWidth)return;
+  photoBusy=true;const target=current;
+  try{await capturePhoto(target);}catch(e){showToast('사진을 저장하지 못했습니다');}finally{photoBusy=false;}
+}
+async function capturePhoto(target){
   await waitForStableFrame(120);
+  if(!stream||!cam.classList.contains('open'))return;
   const track=stream.getVideoTracks()[0];
   // Do not invoke ImageCapture.takePhoto() while MediaRecorder is consuming the
   // same iOS camera track. WebKit can reconfigure/stall the live track and leave
@@ -1714,11 +1863,11 @@ async function takePhoto(){
       let opts={};
       try{
         const pc=await ic.getPhotoCapabilities();
-        if(pc&&pc.imageWidth&&Number.isFinite(pc.imageWidth.max))opts.imageWidth=pc.imageWidth.max;
-        if(pc&&pc.imageHeight&&Number.isFinite(pc.imageHeight.max))opts.imageHeight=pc.imageHeight.max;
+        if(pc&&pc.imageWidth&&Number.isFinite(pc.imageWidth.max))opts.imageWidth=Math.min(2560,pc.imageWidth.max);
+        if(pc&&pc.imageHeight&&Number.isFinite(pc.imageHeight.max))opts.imageHeight=Math.min(2560,pc.imageHeight.max);
       }catch(e){}
       const blob=await ic.takePhoto(opts);
-      if(blob&&blob.size){await attachMedia(blob,'photo');return;}
+      if(blob&&blob.size){await attachMedia(blob,'photo',null,null,target);return;}
     }catch(e){}
   }
   // Reliable fallback: capture the current video frame, including software zoom crop.
@@ -1729,37 +1878,52 @@ async function takePhoto(){
     const sw=vw/zoomLevel,sh=vh/zoomLevel,sx=(vw-sw)/2,sy=(vh-sh)/2;
     ctx.drawImage(video,sx,sy,sw,sh,0,0,vw,vh);
   }else ctx.drawImage(video,0,0,vw,vh);
-  c.toBlob(b=>{if(b)attachMedia(b,'photo')},'image/jpeg',.94);
+  const b=await new Promise(resolve=>c.toBlob(resolve,'image/jpeg',.9));c.width=c.height=0;
+  if(b)await attachMedia(b,'photo',null,null,target);
 }
 function pickMime(cs){ for(const m of cs)if(MediaRecorder.isTypeSupported(m))return m; return ''; }
 async function toggleRec(){
+  if(videoStarting)return;videoStarting=true;
+  try{await startOrStopVideo();}catch(e){showToast('녹화를 시작하지 못했습니다');}finally{videoStarting=false;}
+}
+async function startOrStopVideo(){
   if(!stream)return;
   if(mediaRecorder&&mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
-  if(audioRec&&audioRec.state==='recording'){ pendingVideoStart=true; audioRec.stop(); return; }
-  if(!video.videoWidth){ showToast('카메라 준비 중… 잠시 후 다시 시도'); return; }
+  if(audioStarting)return;
+  if(audioRec&&audioRec.state==='recording'){audioRec.stop();await audioFinish;}
+  await videoFinish;
+  if(!stream||!current)return;
+  const target=current,source=stream;
+  if(!video.videoWidth||!source.getVideoTracks().some(t=>t.readyState==='live')){showToast('카메라 준비 중… 잠시 후 다시 시도');return;}
   // Standalone audio recording may have released the camera stream's mic track.
   // Re-acquire a fresh mic track only when video recording actually starts.
   if(!stream.getAudioTracks().some(t=>t.readyState==='live')){
-    try{ resetAudioSessionForCapture(); const ms=await navigator.mediaDevices.getUserMedia({audio:true}); const mt=ms.getAudioTracks()[0]; if(mt)stream.addTrack(mt); }
+    try{ resetAudioSessionForCapture(); const ms=await navigator.mediaDevices.getUserMedia({audio:true}); if(stream!==source||current!==target){ms.getTracks().forEach(t=>t.stop());return;}const mt=ms.getAudioTracks()[0];if(mt)source.addTrack(mt);for(const t of ms.getTracks())if(t!==mt)t.stop(); }
     catch(e){ showToast('마이크를 사용할 수 없어 영상만 녹화합니다.'); }
+    if(stream!==source||current!==target||!cam.classList.contains('open'))return;
   }
-  recChunks=[]; let poster=null;
-  const pc=document.createElement('canvas'); pc.width=video.videoWidth; pc.height=video.videoHeight; pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;},'image/jpeg',.7);
+  let poster=null;
+  const pc=document.createElement('canvas'); pc.width=320; pc.height=Math.max(1,Math.round(320*video.videoHeight/video.videoWidth)); pc.getContext('2d').drawImage(video,0,0,pc.width,pc.height); pc.toBlob(b=>{poster=b;pc.width=pc.height=0;},'image/jpeg',.7);
   // iOS Safari's MediaRecorder often reports mp4 as supported but produces
   // black/empty video. Prefer webm (h264/vp8) first; fall back to mp4 last.
   const mime=pickMime(['video/webm;codecs=h264','video/webm;codecs=vp8','video/webm','video/mp4']);
   try{
     mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
   }catch(e){ mediaRecorder=new MediaRecorder(stream); }
-  mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size)recChunks.push(e.data); };
-  mediaRecorder.onstop=()=>{
-    stopRecUI();
-    if(!recChunks.length){ showToast('녹화 데이터가 비었습니다. 다시 시도해 주세요'); return; }
-    const durSec=(Date.now()-recStart)/1000;
-    attachMedia(new Blob(recChunks,{type:mediaRecorder.mimeType||mime||'video/webm'}),'video',poster,durSec);
+  const recorder=mediaRecorder;let finish;
+  const capture=await beginCapture(recorder,target,'video',poster);
+  videoFinish=new Promise(resolve=>{finish=resolve;});
+  recorder.ondataavailable=e=>capture.append(e.data);
+  recorder.onerror=()=>{showToast('녹화가 중단되었습니다');if(recorder.state!=='inactive')recorder.stop();};
+  recorder.onstop=async()=>{
+    const duration=(Date.now()-recStart)/1000;stopRecUI();
+    try{await capture.finish(duration,poster);}
+    catch(e){reportSaveError();}
+    finally{if(mediaRecorder===recorder)mediaRecorder=null;finish();}
   };
-  // timeslice: emit chunks every 1s so data is never lost on short/edge cases
-  mediaRecorder.start(1000); startRecUI();
+  if(stream!==source||current!==target){mediaRecorder=null;finish();return;}
+  try{recorder.start(1000);startRecUI();}catch(e){finish();mediaRecorder=null;throw e;}
+
 }
 /* Re-evaluate camera geometry after iPhone rotation without tearing down an active recording. */
 function refreshCameraAfterOrientation(){
@@ -1775,23 +1939,30 @@ if(screen.orientation&&screen.orientation.addEventListener)screen.orientation.ad
 /* ===== Screen Wake Lock: keep screen on during capture so auto-sleep
    doesn't interrupt recording. (Manual lock / app backgrounding still
    pauses on iOS — a platform limit no web app can override.) ===== */
-let wakeLock=null;
+let wakeLock=null,wakeRequest=0;
 async function acquireWakeLock(){
-  try{ if('wakeLock' in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{ wakeLock=null; }); } }catch(e){}
+  if(!('wakeLock' in navigator)||wakeLock)return;
+  const request=++wakeRequest;
+  try{
+    const lock=await navigator.wakeLock.request('screen');
+    if(request!==wakeRequest||!isRecording()){await lock.release();return;}
+    wakeLock=lock;lock.addEventListener('release',()=>{if(wakeLock===lock)wakeLock=null;});
+  }catch(e){}
 }
 async function releaseWakeLock(){
-  try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(e){}
+  wakeRequest++;const lock=wakeLock;wakeLock=null;
+  if(lock)try{await lock.release();}catch(e){}
 }
 // re-acquire if the page becomes visible again while still recording
 function isRecording(){ return (mediaRecorder&&mediaRecorder.state==='recording')||(typeof audioRec!=='undefined'&&audioRec&&audioRec.state==='recording'); }
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){
+    audioStartSeq++;persistDraft().catch(reportSaveError);
+    if(viewer.classList.contains('open')){closeViewer();setMemoOverlay(true);syncModeToggle();}
     // Going to background: if NOT actively recording, release the camera/mic
     // so iOS drops the green/orange indicator. Active recordings are left alone.
-    if(!isRecording() && stream){
-      try{ stream.getTracks().forEach(t=>t.stop()); video.srcObject=null; }catch(e){}
-      stream=null; camOpacity.classList.remove('open'); camOpacityBackdrop.classList.remove('open'); cam.classList.remove('open'); capDock.classList.remove('open'); document.body.classList.remove('cam-active'); document.getElementById('btnShrinkCam').style.display='none';
-    }
+    if(!isRecording()){closeCamera();}
+
   } else {
     if(isRecording()) acquireWakeLock();
   }
@@ -1815,39 +1986,51 @@ bindTap($('capPhoto'), ()=>{ if(cam.classList.contains('open')) closeCamera(); e
 /* capPhoto handled by bindTap above */
 
 /* audio */
-let audioRec=null,audioChunks=[],pendingVideoStart=false;
+let audioRec=null,pendingVideoStart=false;
 async function startAudio(){
-  if(!current)openEditor(null);
+  if(audioStarting||videoStarting||isRecording())return;
+  audioStarting=true;const request=++audioStartSeq;
+  if(!current)openEditor(null);const target=current;let source;
   try{
-    // iOS permits only one reliable mic capture owner here. Camera preview itself
-    // does not need its audio track, so release it before standalone recording.
-    if(stream){ for(const t of stream.getAudioTracks()){ try{t.stop();stream.removeTrack(t);}catch(e){} } }
+    await audioFinish;
+    if(stream)for(const t of stream.getAudioTracks()){t.stop();stream.removeTrack(t);}
     resetAudioSessionForCapture();
-    await new Promise(r=>setTimeout(r,80));
-    const a=await navigator.mediaDevices.getUserMedia({audio:true}); audioChunks=[]; const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
-    audioRec=new MediaRecorder(a,mime?{mimeType:mime}:undefined);
-    const aStart=Date.now();
-    audioRec.ondataavailable=e=>{ if(e.data.size)audioChunks.push(e.data); };
-    audioRec.onstop=()=>{ releaseWakeLock(); a.getTracks().forEach(t=>t.stop()); attachMedia(new Blob(audioChunks,{type:audioRec.mimeType}),'audio',null,(Date.now()-aStart)/1000); $('capAudio').classList.remove('on'); audioRec=null; resetAudioSessionForCapture(); if(pendingVideoStart){pendingVideoStart=false;setTimeout(toggleRec,120);} };
-    audioRec.start(); acquireWakeLock(); $('capAudio').classList.add('on'); showToast('🎙️ 녹음 중… 다시 탭하면 정지');
-  }catch(e){ showToast('마이크 오류: '+e.name); }
+    source=await navigator.mediaDevices.getUserMedia({audio:true});
+    if(request!==audioStartSeq||current!==target||document.hidden){source.getTracks().forEach(t=>t.stop());return;}
+    const mime=pickMime(['audio/mp4','audio/webm;codecs=opus','audio/webm']);
+    const recorder=new MediaRecorder(source,mime?{mimeType:mime}:undefined);audioRec=recorder;
+    const capture=await beginCapture(recorder,target,'audio',null);
+    const started=Date.now();let finish;audioFinish=new Promise(resolve=>{finish=resolve;});
+    recorder.ondataavailable=e=>capture.append(e.data);
+    recorder.onerror=()=>{showToast('녹음이 중단되었습니다');if(recorder.state!=='inactive')recorder.stop();};
+    recorder.onstop=async()=>{
+      releaseWakeLock();source.getTracks().forEach(t=>t.stop());
+      try{await capture.finish((Date.now()-started)/1000,null);}
+      catch(e){reportSaveError();}
+      finally{if(audioRec===recorder)audioRec=null;$('capAudio').classList.remove('on');resetAudioSessionForCapture();finish();}
+    };
+    if(request!==audioStartSeq||current!==target){source.getTracks().forEach(t=>t.stop());audioRec=null;finish();return;}
+    try{recorder.start(1000);}catch(e){finish();audioRec=null;throw e;}
+    acquireWakeLock();$('capAudio').classList.add('on');showToast('🎙️ 녹음 중… 다시 탭하면 정지');
+  }catch(e){if(source)source.getTracks().forEach(t=>t.stop());showToast('마이크 오류: '+e.name);}
+  finally{audioStarting=false;}
 }
 /* capAudio handled by bindTap (defined after deps) */
 bindTap($('capAudio'), ()=>{ if(audioRec&&audioRec.state==='recording')audioRec.stop(); else startAudio(); });
 
-$('btnShrinkThumb').addEventListener('click',()=>{ document.body.classList.toggle('shrink-thumb'); const on=document.body.classList.contains('shrink-thumb'); $('btnShrinkThumb').classList.toggle('on',on); localStorage.setItem('shrinkThumb',on?'1':'0'); });
+$('btnShrinkThumb').addEventListener('click',()=>{ document.body.classList.toggle('shrink-thumb'); const on=document.body.classList.contains('shrink-thumb'); $('btnShrinkThumb').classList.toggle('on',on); preferences.setItem('shrinkThumb',on?'1':'0'); });
 function toggleCameraPreviewSize(){
   document.body.classList.toggle('shrink-cam');
   const on=document.body.classList.contains('shrink-cam');
   $('btnShrinkCam').classList.toggle('on',on);
   const fb=$('camShrinkFloat');if(fb){fb.classList.toggle('on',on);fb.textContent=on?'↗':'↙';}
-  localStorage.setItem('shrinkCam',on?'1':'0');
+  preferences.setItem('shrinkCam',on?'1':'0');
 }
 $('btnShrinkCam').addEventListener('click',toggleCameraPreviewSize);
 bindTap($('camShrinkFloat'),e=>{if(e){e.preventDefault();e.stopPropagation();}toggleCameraPreviewSize();});
 
 /* ===== Dark mode ===== */
-function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; localStorage.setItem(DARK_KEY,on?'1':'0'); }
+function applyDark(on){ document.body.classList.toggle('dark',on); $('btnDark').textContent=on?'☀️':'🌙'; preferences.setItem(DARK_KEY,on?'1':'0'); }
 $('btnDark').addEventListener('click',()=>applyDark(!document.body.classList.contains('dark')));
 
 /* ===== Search ===== */
@@ -1867,7 +2050,7 @@ $('sortBtn').addEventListener('click',()=>{
   html+='</div>';
   sheetHost.innerHTML=html; sheetBg.classList.add('open');
   sheetHost.querySelectorAll('.sh-item[data-sort]').forEach(el=>el.addEventListener('click',()=>{
-    sortMode=el.dataset.sort; localStorage.setItem(SORT_KEY,sortMode); updateSortLabel(); closeSheet(); renderNotes();
+    sortMode=el.dataset.sort; preferences.setItem(SORT_KEY,sortMode); updateSortLabel(); closeSheet(); renderNotes();
   }));
 });
 
@@ -1875,14 +2058,14 @@ $('sortBtn').addEventListener('click',()=>{
 listEl.addEventListener('scroll',closeAllRows); folderListEl.addEventListener('scroll',closeAllRows);
 
 /* restore prefs */
-applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
+applyDark(preferences.getItem(DARK_KEY)==='1'); updateSortLabel();
 /* thumbnails default to SMALL; camera window defaults to large. Restore prefs. */
 (function(){
-  const st=localStorage.getItem('shrinkThumb');
+  const st=preferences.getItem('shrinkThumb');
   const thumbSmall = st===null ? true : st==='1';
   document.body.classList.toggle('shrink-thumb',thumbSmall);
   $('btnShrinkThumb').classList.toggle('on',thumbSmall);
-  const sc=localStorage.getItem('shrinkCam')==='1';
+  const sc=preferences.getItem('shrinkCam')==='1';
   document.body.classList.toggle('shrink-cam',sc);
   $('btnShrinkCam').classList.toggle('on',sc); if($('camShrinkFloat')){$('camShrinkFloat').classList.toggle('on',sc);$('camShrinkFloat').textContent=sc?'↗':'↙';}
 })();
@@ -1890,10 +2073,10 @@ applyDark(localStorage.getItem(DARK_KEY)==='1'); updateSortLabel();
 const settingsEl=$('settings');
 function openSettings(){
   $('setDark').checked=document.body.classList.contains('dark');
-  const cloudOn=localStorage.getItem('cloudEnabled')==='1';
+  const cloudOn=preferences.getItem('cloudEnabled')==='1';
   $('setCloud').checked=cloudOn; $('cloudFields').classList.toggle('hidden',!cloudOn);
-  $('cloudUrl').value=localStorage.getItem('cloudUrl')||'';
-  $('cloudKey').value=localStorage.getItem('cloudKey')||'';
+  $('cloudUrl').value=preferences.getItem('cloudUrl')||'';
+  $('cloudKey').value=preferences.getItem('cloudKey')||'';
   settingsEl.classList.add('open');
 }
 function closeSettings(){ settingsEl.classList.remove('open'); }
@@ -1901,39 +2084,67 @@ $('settingsBtn').addEventListener('click',openSettings);
 $('setClose').addEventListener('click',closeSettings);
 $('setDark').addEventListener('change',e=>applyDark(e.target.checked));
 $('setCloud').addEventListener('change',e=>{
-  const on=e.target.checked; localStorage.setItem('cloudEnabled',on?'1':'0');
+  const on=e.target.checked; preferences.setItem('cloudEnabled',on?'1':'0');
   $('cloudFields').classList.toggle('hidden',!on);
 });
 $('cloudSave').addEventListener('click',()=>{
-  localStorage.setItem('cloudUrl',$('cloudUrl').value.trim());
-  localStorage.setItem('cloudKey',$('cloudKey').value.trim());
+  preferences.setItem('cloudUrl',$('cloudUrl').value.trim());
+  preferences.setItem('cloudKey',$('cloudKey').value.trim());
   showToast('연결 정보를 저장했습니다');
 });
 
 /* ----- JSON backup / restore ----- */
-function blobToDataURL(b){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); }); }
-function dataURLToBlob(d){ const [h,b64]=d.split(','); const mime=(h.match(/:(.*?);/)||[])[1]||'application/octet-stream'; const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return new Blob([u],{type:mime}); }
-async function exportJSON(){
-  showToast('백업 파일 생성 중…');
-  const fs=await getAll(FOLDERS), ns=await getAll(NOTES);
-  const out={ version:1, exportedAt:Date.now(), folders:fs, notes:[] };
-  for(const n of ns){
-    const media=[];
-    for(const m of (n.media||[])){
-      const item={kind:m.kind};
-      if(m.blob)item.blob=await blobToDataURL(m.blob);
-      if(m.poster)item.poster=await blobToDataURL(m.poster);
-      media.push(item);
-    }
-    out.notes.push({...n, media, _url:undefined, _purl:undefined});
+function blobToDataURL(b){return new Promise((resolve,reject)=>{
+  const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.onabort=()=>reject(new Error('읽기 취소'));r.readAsDataURL(b);
+});}
+// Build the legacy JSON backup as Blob parts, using small base64 chunks.
+// Keep the format compatible without retaining a second complete JSON string.
+async function appendBackupBlob(parts,blob){
+  parts.push(JSON.stringify('data:'+(blob.type||'application/octet-stream')+';base64,').slice(0,-1));
+  for(let offset=0;offset<blob.size;offset+=196608){
+    const encoded=await blobToDataURL(blob.slice(offset,offset+196608));
+    parts.push(new Blob([encoded.slice(encoded.indexOf(',')+1)]));
+    await new Promise(resolve=>setTimeout(resolve,0));
   }
-  const json=JSON.stringify(out);
-  const blob=new Blob([json],{type:'application/json'});
-  const filename='memo-backup-'+new Date().toISOString().slice(0,10)+'.json';
-  const file=new File([blob],filename,{type:'application/json'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file]}); showToast('백업을 내보냈습니다'); return; }catch(e){ if(e&&e.name==='AbortError')return; } }
-  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),60000);
-  showToast('백업을 내보냈습니다');
+  parts.push('"');
+}
+async function buildBackupBlob(){
+  const parts=['{"version":1,"exportedAt":'+Date.now()+',"folders":'+JSON.stringify(folders)+',"notes":['];
+  // Snapshot descriptors, not the full binary contents of every note.
+  const snapshot=notes.map(cleanForSave);
+  for(let i=0;i<snapshot.length;i++){
+    const n=snapshot[i];if(i)parts.push(',');
+    parts.push(JSON.stringify({...n,media:undefined}).slice(0,-1)+',"media":[');
+    for(let j=0;j<(n.media||[]).length;j++){
+      const m=n.media[j];if(j)parts.push(',');
+      parts.push(JSON.stringify({kind:m.kind,duration:m.duration,recordingId:m.recordingId}).slice(0,-1));
+      if(m.blob){parts.push(',"blob":');await appendBackupBlob(parts,m.blob);}
+      if(m.poster){parts.push(',"poster":');await appendBackupBlob(parts,m.poster);}
+      parts.push('}');
+    }
+    parts.push(']}');
+  }
+  parts.push(']}');return new Blob(parts,{type:'application/json'});
+}
+function dataURLToBlob(d){
+  const comma=d.indexOf(','),header=d.slice(0,comma),mime=(header.match(/:(.*?);/)||[])[1]||'application/octet-stream',parts=[];
+  if(comma<0)throw new Error('잘못된 첨부파일');
+  for(let i=comma+1;i<d.length;i+=262144){
+    const bin=atob(d.slice(i,i+262144)),bytes=new Uint8Array(bin.length);
+    for(let j=0;j<bin.length;j++)bytes[j]=bin.charCodeAt(j);
+    parts.push(new Blob([bytes]));
+  }
+  return new Blob(parts,{type:mime});
+}
+let backupBusy=false;
+async function exportJSON(){
+  if(backupBusy)return;backupBusy=true;$('setExport').disabled=true;
+  try{
+    await finishCaptures();await persistDraft();showToast('백업 파일 생성 중…');
+    const blob=await buildBackupBlob(),name='memo-backup-'+new Date().toISOString().slice(0,10)+'.json';
+    await openBatchExportSheet([],[{name,blob,type:'application/json'}]);
+  }catch(e){showToast('백업을 만들지 못했습니다. 다시 시도해 주세요');}
+  finally{backupBusy=false;$('setExport').disabled=false;}
 }
 $('setExport').addEventListener('click',exportJSON);
 $('setImport').addEventListener('click',()=>$('importFile').click());
@@ -1948,7 +2159,7 @@ $('importFile').addEventListener('change',async e=>{
       for(const n of data.notes){
         const media=[];
         for(const m of (n.media||[])){
-          const item={kind:m.kind};
+          const item={kind:m.kind,duration:m.duration,recordingId:m.recordingId};
           if(m.blob)item.blob=dataURLToBlob(m.blob);
           if(m.poster)item.poster=dataURLToBlob(m.poster);
           media.push(item);
@@ -1966,12 +2177,13 @@ $('importFile').addEventListener('change',async e=>{
 
 /* ===== Login gate (password only; initial 1128) ===== */
 const APP_PASSWORD='1128';
-let appStarted=false;
-function tryUnlock(){
+let appStarted=false,unlockBusy=false;
+async function tryUnlock(){
+  if(unlockBusy)return;
   const pw=$('loginPw').value;
   if(pw===APP_PASSWORD){
-    document.body.classList.remove('locked');
-    $('loginErr').textContent='';
+    unlockBusy=true;$('loginBtn').disabled=true;
+    $('loginErr').textContent='메모를 불러오는 중…';
     $('loginPw').value='';
     if(!appStarted){ appStarted=true; /* ===== Keep capture UI above the on-screen keyboard ===== */
 (function(){
@@ -1988,7 +2200,9 @@ function tryUnlock(){
   update();
 })();
 
-init(); }
+try{await init();}catch(e){appStarted=false;$('loginErr').textContent='저장소를 열지 못했습니다. 다시 시도해 주세요';} }
+    if(appStarted){document.body.classList.remove('locked');$('loginErr').textContent='';}
+    unlockBusy=false;$('loginBtn').disabled=false;
   } else {
     $('loginErr').textContent='비밀번호가 일치하지 않습니다';
     $('loginPw').value=''; $('loginPw').focus();
